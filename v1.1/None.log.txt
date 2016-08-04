@@ -1,0 +1,17 @@
+Parameters for analysis:
+
+Date of analysis: 2014-12-30 14:05:00.650054
+status	Somatic_LOH
+ionreporter_tsv	None
+normal_purity	1
+galaxy_output_directory	None
+ionreporter_vcf	None
+normal	None
+galaxy_html_file	None
+varscan_vcf	None
+filter	True
+platform	PGM
+mode	True
+base_output	None
+tumor	None
+tumor_purity	1
