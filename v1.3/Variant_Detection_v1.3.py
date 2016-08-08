@@ -101,7 +101,7 @@ STRELKA_CONFIG_TARGETED = '/home/michael/bin/strelka/etc/strelka_config.iontorre
 STRELKA_CONFIG = STRELKA_CONFIG_TARGETED
 MUTECT_V1_PON = "/home/michael/Development/MuTect/OCP.mutect.PON.vcf"
 MUTECT2_PON_OCP = "/home/michael/Development/MuTect2/PON/OCP/OCP.mutect2.PON.vcf"
-MUTECT2_PON_CCP = "/home/michael/Development/MuTect2/CCP.mutect2.PON.vcf"
+MUTECT2_PON_CCP = "/home/michael/Development/MuTect2/PON/CCP/CCP.mutect2.PON.vcf"
 
 # POPULATION NORMALS
 
