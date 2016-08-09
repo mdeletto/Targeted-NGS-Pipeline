@@ -129,7 +129,7 @@ def main():
     REGIONS_FILE = select_target_regions(opts.regions) 
   
     # Check remote TS BAM input
-    if opts.tumor is None or opts.tumor == "None":
+    if opts.tumor is None or opts.tumor == "None" and opts.ionreporter_only is True:
         subprocess.call("touch %s.varscan.json && touch %s.varscan.vcf" % (opts.base_output,opts.base_output), shell=True)
         varscan_vcf = "%s.varscan.vcf" % opts.base_output
     else:

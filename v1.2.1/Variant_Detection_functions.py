@@ -432,3 +432,17 @@ def extra_file_cleanup():
 
 def update_mongodb():
     from pymongo import MongoClient
+
+
+def perform_coverage_analysis(COVERAGE_ANALYSIS_EXE, base_output, tumor_bam, normal_bam, target_region_bed):
+    try:
+        subprocess.call("""%s \
+                           -b %s \
+                           -d coverage-analysis \
+                           -t %s \
+                           -n %s \
+                           -r %s \
+                           --target_type=Amplicon""" % (COVERAGE_ANALYSIS_EXE, base_output, tumor_bam, normal_bam, target_region_bed), shell=True)
+    except Exception, e:
+        print "ERROR: Coverage analysis failed.  Please check parameters:"
+        print str(e)
