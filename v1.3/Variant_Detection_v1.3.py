@@ -100,8 +100,8 @@ cosmic_vcf = '/home/michael/YNHH/Reference_Files/Common/Common/COSMIC.v74.hg19.u
 STRELKA_CONFIG_TARGETED = '/home/michael/bin/strelka/etc/strelka_config.iontorrent.targeted.ini'
 STRELKA_CONFIG = STRELKA_CONFIG_TARGETED
 MUTECT_V1_PON = "/home/michael/Development/MuTect/OCP.mutect.PON.vcf"
-MUTECT2_PON_OCP = "/home/michael/Development/MuTect2/PON/OCP/OCP.mutect2.PON.vcf"
-MUTECT2_PON_CCP = "/home/michael/Development/MuTect2/CCP.mutect2.PON.vcf"
+MUTECT2_PON_OCP = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/OCP/OCP.mutect2.PON.vcf"
+MUTECT2_PON_CCP = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/CCP/CCP.mutect2.PON.vcf"
 
 # POPULATION NORMALS
 
@@ -129,7 +129,7 @@ def main():
     REGIONS_FILE = select_target_regions(opts.regions) 
   
     # Check remote TS BAM input
-    if opts.tumor is None or opts.tumor == "None":
+    if opts.tumor is None or opts.tumor == "None" and opts.ionreporter_only is True:
         subprocess.call("touch %s.varscan.json && touch %s.varscan.vcf" % (opts.base_output,opts.base_output), shell=True)
         varscan_vcf = "%s.varscan.vcf" % opts.base_output
     else:

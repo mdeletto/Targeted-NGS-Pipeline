@@ -254,14 +254,11 @@ def IR_locate_variant_zip(basename,ionreporter_id):
     try:
         proc = subprocess.Popen(["""curl -k -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "https://10.80.157.179/webservices_42/rest/api/analysis?format=json&name=%s&id=%s" 2> /dev/null""" % (basename,ionreporter_id)],shell=True,stdout=subprocess.PIPE)
         output, err = proc.communicate()
-        print output
-        print err
     except:
         print "Unable to communicate with server.  Check Authorization key, server address, and your network connectivity."
         sys.exit(1)
     try:
         output = output.strip("[").strip("]")
-        print output
         try:
             data = json.loads(output)
         except:
