@@ -252,16 +252,13 @@ def zip_files_tmp(base_output,galaxy_dir):
 
 def IR_locate_variant_zip(basename,ionreporter_id):
     try:
-        proc = subprocess.Popen(["""curl -k -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "https://10.80.50.179/webservices_42/rest/api/analysis?format=json&name=%s&id=%s" 2> /dev/null""" % (basename,ionreporter_id)],shell=True,stdout=subprocess.PIPE)
+        proc = subprocess.Popen(["""curl -k -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "https://10.80.157.179/webservices_42/rest/api/analysis?format=json&name=%s&id=%s" 2> /dev/null""" % (basename,ionreporter_id)],shell=True,stdout=subprocess.PIPE)
         output, err = proc.communicate()
-        print output
-        print err
     except:
         print "Unable to communicate with server.  Check Authorization key, server address, and your network connectivity."
         sys.exit(1)
     try:
         output = output.strip("[").strip("]")
-        print output
         try:
             data = json.loads(output)
         except:
@@ -432,17 +429,3 @@ def extra_file_cleanup():
 
 def update_mongodb():
     from pymongo import MongoClient
-
-
-def perform_coverage_analysis(COVERAGE_ANALYSIS_EXE, base_output, tumor_bam, normal_bam, target_region_bed):
-    try:
-        subprocess.call("""%s \
-                           -b %s \
-                           -d coverage-analysis \
-                           -t %s \
-                           -n %s \
-                           -r %s \
-                           --target_type=Amplicon""" % (COVERAGE_ANALYSIS_EXE, base_output, tumor_bam, normal_bam, target_region_bed), shell=True)
-    except Exception, e:
-        print "ERROR: Coverage analysis failed.  Please check parameters:"
-        print str(e)

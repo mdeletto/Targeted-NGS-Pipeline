@@ -70,7 +70,7 @@ VCFLIB_DIR = "/home/michael/bin/vcflib/bin"
 MUTECT_EXE = "/home/michael/bin/mutect/muTect-1.1.7.jar"
 GATK_EXE = "/home/michael/bin/GATK/GenomeAnalysisTK.jar"
 STRELKA_EXE = '/home/michael/bin/strelka/bin/configureStrelkaWorkflow.pl'
-COVERAGE_ANALYSIS_EXE = '/home/michael/YNHH/Code/Github-mdeletto/TorrentTools/tumor_normal_coverage_analysis.py'
+
 
 VEP_REF_FASTA = "/home/michael/YNHH/Reference_Files/FASTA/hg19.VEP.fasta"
 REFERENCE_FASTA = "/home/michael/YNHH/Reference_Files/FASTA/hg19.fasta"
@@ -216,15 +216,8 @@ def main():
                     opts.normal = POPULATION_NORMAL_BAM_OCP
             else:
                 opts.normal = pull_BAM_from_url(opts.normal,opts.base_output,"normal")
-        
-        ### CREATE BAM INDEXES ###
-        
         pysam.index(opts.tumor) # create index for tumor
         pysam.index(opts.normal) # create index for normal
-        
-        ### PERFORM COVERAGE ANALYSIS WITH tumor_normal_coverage_analysis.py ###
-        
-        perform_coverage_analysis(COVERAGE_ANALYSIS_EXE, opts.base_output, opts.tumor, opts.normal, REGIONS_FILE)
         
         ### MPILEUP FOR NORMAL/TUMOR BAMS ###
         
