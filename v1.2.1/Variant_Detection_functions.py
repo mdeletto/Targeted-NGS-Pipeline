@@ -278,16 +278,21 @@ def IR_download_variant_zip(basename,variant_link,analysis_type):
         proc = subprocess.call("""curl -k -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR.zip; \
                                   unzip -q IR.zip; \
                                   rm -rf IR.zip; \
-                                  unzip -q %s*.zip; \
+                                  unzip -q *.zip; \
                                   cp ./Variants/*/*.vcf %s.ionreporter.%s_temp.vcf && cp ./Variants/*/*.tsv %s.ionreporter.%s_temp.tsv; \
-                                  rm -rf IR.zip %s*.zip QC Variants Workflow_Settings VER*.log""" % (variant_link,basename,basename,analysis_type,basename,analysis_type,basename),shell=True)
+                                  rm -rf IR.zip *.zip QC Variants Workflow_Settings VER*.log""" % (variant_link,basename,analysis_type,basename,analysis_type),shell=True)
     except:
         print "Unable to download and/or unzip IonReporter files.  Aborting..."
         sys.exit(1)
 
 def IR_download_fusion_zip(fusion_analysis_name,variant_link,basename):
     try:
-        proc = subprocess.call("""curl -k -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR_fusion.zip; unzip -q IR_fusion.zip && unzip -q %s.zip; cp ./Variants/*/*.vcf %s.ionreporter.fusions.vcf; rm -rf IR_fusion.zip %s.zip Variants Workflow_Settings QC""" % (variant_link,fusion_analysis_name,basename,fusion_analysis_name),shell=True)
+        proc = subprocess.call("""curl -k -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR_fusion.zip; \
+                                  unzip -q IR_fusion.zip; \
+                                  rm -rf IR_fusion.zip; \
+                                  unzip -q *.zip; \
+                                  cp ./Variants/*/*.vcf %s.ionreporter.fusions.vcf; \
+                                  rm -rf IR_fusion.zip *.zip Variants Workflow_Settings QC""" % (variant_link,basename),shell=True)
     except:
         print "Unable to download and/or unzip IonReporter Fusion files.  Aborting..."
         sys.exit(1)

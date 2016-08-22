@@ -128,7 +128,7 @@ def main():
         print "Remote download of FUSION VCF from IonReporter initiated.  Please hold...",
         try:
             variant_link = IR_locate_variant_zip(opts.ionreporter_fusion_analysis_name,opts.ionreporter_fusion_id) # Determine download link
-            IR_download_fusion_zip(opts.ionreporter_fusion_analysis_name, variant_link, opts.base_output) # Download analysis and process files
+            IR_download_fusion_zip(opts.base_output, variant_link, opts.base_output) # Download analysis and process files
             print "SUCCESS"
         except:
             print "FAILED"
