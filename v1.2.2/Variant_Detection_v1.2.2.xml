@@ -28,6 +28,8 @@
 		<option value="OCP" selected="true">Oncomine Cancer Panel</option>
 		<option value="BRCA">BRCA1/2 Custom Panel</option>
 		<option value="CHPv2">Cancer Hotspot Panel v2 (50 Gene)</option>
+		<option value="TP53">TP53 Community Panel</option>
+		<option value="TSC">TSC1/TSC2 NCI9767</option>
 	</param>
 	<param name="version" type="select" label="IonReporter version">
 		<option value="4.4" selected="true">4.4</option>
@@ -41,8 +43,8 @@
 		<option value="Somatic_LOH">Somatic and LOH</option>
 	</param>
 	<param name="filter_flag" type="select" label="Consequential Filtering">
-		<option value="True" selected="true">ENABLED</option>
-		<option value="False">DISABLED</option>
+		<option value="False" selected="true">ENABLED</option>
+		<option value="True">DISABLED</option>
 	</param>
 	<param name="platform" type="select" label="Platform sequencing was performed on">
 		<option value="IonTorrent" selected="true">IonTorrent</option>
