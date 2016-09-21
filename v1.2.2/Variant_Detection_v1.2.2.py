@@ -27,7 +27,7 @@ parser.add_option("--galaxy", action="store_true", help="Apply galaxy-specific c
 
 group = optparse.OptionGroup(parser, "IonReporter inputs (for IonTorrent analyses)",
                              "IonReporter-specific inputs for IonTorrent data only")
-group.add_option("--ionreporter_version", action="store", help="Please indicate IR version number (ex. 4.0, 4.4)", dest="ionreporter_version", default=4.4)
+group.add_option("--ionreporter_version", action="store", help="Please indicate IR version number (ex. 4.4, 4.6, 5.0)", dest="ionreporter_version", default=5.0)
 group.add_option('--ionreporter_somatic_url_bool', help="Flag for if VCF is coming from IonReporter url", dest='ionreporter_somatic_url_bool', action='store_true',default=False)
 group.add_option('--ionreporter_somatic_analysis_name', help="Analysis name within IonReporter", dest='ionreporter_somatic_analysis_name', action='store')
 group.add_option('--ionreporter_somatic_id', help="Analysis ID within IonReporter", dest='ionreporter_somatic_id', action='store')#,default=opts.base_output)

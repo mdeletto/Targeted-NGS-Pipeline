@@ -1,4 +1,4 @@
-#/usr/bin/python
+#!/usr/bin/python
 
 import datetime
 import optparse
@@ -15,20 +15,19 @@ from Variant_Detection_functions import *
 #-------------------------------------------------------------------------------------------
 
 desc="""A pipeline for somatic, germline, and LOH variant detection and annotation for both IonTorrent and Illumina data."""
+vers="1.3"
 
-parser = optparse.OptionParser(description=desc,version="%prog 1.3")
+parser = optparse.OptionParser(description=desc,version=vers)
 
 # GENERAL OPTIONS
 
 parser.add_option('--disable_filtering', help="""Enable consequential filtering for VCFs.  This does not apply to hard filters like read depth (these will be automatically applied to remove false positives).""", dest='filter_disabled', action='store_true',default=False)
-parser.add_option('-s', help='Check for classes of variants in variant detection mode <All,All-HC,Somatic,Germline,LOH,Somatic_LOH>', dest='status', action='store',default='Somatic_LOH')
 parser.add_option('-c', help="Base output name for files.  If a copath ID exists, please use this as the base output name.", dest='base_output', action='store')
 parser.add_option('--url', help="Flag for if BAM is coming from url", dest='url', action='store_true',default=False)
 parser.add_option('--regions', help="Regions to focus analysis on.  Must be in BED format", dest='regions', action='store')
 parser.add_option("-t", action="store", help="Input absolute path to tumor bam </path/to/sample.bam>",dest="tumor")
 parser.add_option("-n", action="store", help="Input absolute path to normal bam---NOTE: If no normal bam is selected, a population normal will be used.",dest="normal",default=None)
 parser.add_option("-p", action="store", help="Platform used for sequencing",dest="platform",default="IonTorrent") # option not currently supported
-parser.add_option("--galaxy", action="store_true", help="Apply galaxy-specific commands if this flag is supplied",dest="galaxy_flag",default=False)
 
 # IONREPORTER OPTIONS
 
@@ -63,8 +62,18 @@ parser.add_option_group(group)
 
 group = optparse.OptionGroup(parser, "Galaxy options",
                     "ONLY TO BE USED IN A GALAXY ENVIRONMENT")
+group.add_option("--galaxy", action="store_true", help="Apply galaxy-specific commands if this flag is supplied",dest="galaxy_flag",default=False)
 group.add_option("--galaxy_html_file", action="store", help="Path to galaxy output file---to be used only in Galaxy environment",dest="galaxy_html_file")
 group.add_option("--output_directory", action="store", help="Path to output directory",dest="output_directory")
+parser.add_option_group(group)
+
+
+# LEGACY OPTIONS (UNSUPPORTED)
+# Variables for VarScan variant calling.  These are disabled anyway, so there will be no effect.
+
+group = optparse.OptionGroup(parser, "LEGACY OPTIONS",
+                    "Old VarScan variant calling options.  These are disabled anyway...")
+group.add_option('-s', help='Check for classes of variants in variant detection mode <All,All-HC,Somatic,Germline,LOH,Somatic_LOH>', dest='status', action='store',default='Somatic_LOH')
 parser.add_option_group(group)
 
 (opts, args) = parser.parse_args()
@@ -124,10 +133,14 @@ def main():
     
     # Write command line parameters to logfile 
     write_logfile(opts) 
-    
+
+    # Attempt to autodetect sample attributes
+    sample_attribute_autodetection(opts.base_output, vers, opts.regions)
+
     # Select target regions.  Defaults to CCP if none
-    REGIONS_FILE = select_target_regions(opts.regions) 
-  
+    REGIONS_FILE = select_target_regions(opts.regions)
+    
+    
     # Check remote TS BAM input
     if opts.tumor is None or opts.tumor == "None" and opts.ionreporter_only is True:
         subprocess.call("touch %s.varscan.json && touch %s.varscan.vcf" % (opts.base_output,opts.base_output), shell=True)
@@ -226,6 +239,22 @@ def main():
         else:
             print "Fusion VCF local input"
             rename_fusion_vcf(opts.ionreporter_fusion_vcf,opts.base_output) # Rename fusions.vcf file as (basename).ionreporter.fusions.vcf
+
+    # Check for ionreporter.fusions.vcf
+    
+    ###  PROCESS FUSIONS VCF AND EXTRACT INFO ###
+    
+    if os.path.isfile('./%s.ionreporter.fusions.vcf' % opts.base_output):
+        fusion_dict = extract_fusion_VCF_information('./%s.ionreporter.fusions.vcf' % opts.base_output)
+        print fusion_dict
+        # If gene expression counts exist, we will need to create a separate counts file.
+        # This file will be used for differential expression analysis
+        if fusion_dict['gene_expression_read_counts']:
+            with open('%s.gene_expression.counts.tsv') as gene_expression_out:
+                gene_expression_out.write("Gene\t%s\n" % opts.base_output)
+                for k in fusion_dict['gene_expression_read_counts'].keys():
+                    gene_expression_out.write("%s\t%s|n" % (k, fusion_dict['gene_expression_read_counts'][k]))
+
 
     #---SELECT IONREPORTER VCF AND APPLY IR VERSION FIX IF NECESSARY---#
     
@@ -433,7 +462,7 @@ def main():
     
     edit_IR_tsv_file(opts.ionreporter_version,opts.ionreporter_somatic_tsv,opts.base_output)
     
-    move_files_to_new_subdirectory(EDDY_EXE, opts.base_output, opts.galaxy_flag)
+    move_files_to_new_subdirectory(opts.tumor, opts.normal, opts.base_output, opts.galaxy_flag)
 
     if opts.galaxy_flag is True:
         Galaxy_special_function(opts.base_output, opts.output_directory)

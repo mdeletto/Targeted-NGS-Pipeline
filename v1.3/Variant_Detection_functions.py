@@ -1,10 +1,22 @@
 #/usr/bin/python
 
-import subprocess,sys,re,os,json,datetime,errno,shutil
+import subprocess
+import sys
+import re
+import os
+import json
+import datetime
+import openpyxl
+import errno
+from pprint import PrettyPrinter
 import pprint
 from collections import defaultdict
 import vcf
 import shutil
+import openpyxl
+import string
+from openpyxl.reader.excel import load_workbook
+
 
 def mkdir_p(path):
     try:
@@ -71,7 +83,7 @@ def SnpSift_filter(vcf_in, SnpSift, BEDTOOLS_EXE, regex_filter, base_output, pro
 def VEP_command_unfiltered(VEP,REF_FASTA,base_output,program, vcf_in):
     print "Annotating file..."
     try:
-        subprocess.call('perl %s --quiet --cache --merged --offline --fasta %s -i %s --everything --check_alleles --coding_only --cache_version 83 --no_intergenic --json -o %s.%s.json -fork 16 &> %s.vep.log' % (VEP,REF_FASTA,vcf_in,base_output,program,base_output),shell=True)
+        subprocess.call('perl %s --quiet --cache --merged --offline --fasta %s -i %s --everything --check_alleles --coding_only --cache_version 83 --json -o %s.%s.json -fork 16 &> %s.vep.log' % (VEP,REF_FASTA,vcf_in,base_output,program,base_output),shell=True)
     except:
         print "ERROR: Could not initiate annotation on VCF file"
 
@@ -157,7 +169,7 @@ def VEP_command_filtered(VEP,REF_FASTA,base_output,program,vcf_in):
         print "ERROR: %s" % str(e)
 
 
-def move_files_to_new_subdirectory(EDDY,base_output,galaxy_flag):
+def move_files_to_new_subdirectory(tumor_bam, normal_bam, base_output,galaxy_flag):
     print "Moving files to new directory named %s to prepare for final spreadsheet processing..." % base_output
     try:
         subprocess.call('/usr/lib/jvm/java-8-oracle/jre/bin/java -jar %s -f %s.varscan.json %s.ionreporter.no_cnv.json %s.ionreporter.cnv.vcf %s.ionreporter.tsv' % (EDDY,base_output,base_output,base_output,base_output),shell=True)
@@ -169,7 +181,7 @@ def move_files_to_new_subdirectory(EDDY,base_output,galaxy_flag):
             subprocess.call('mv %s*temp* %s/tmp/ 2>> /tmp/error' % (base_output,base_output),shell=True)           
 
             mkdir_p("%s/%s/BAMs" %(os.getcwd(),base_output))
-            subprocess.call('mv %s*bam* %s/BAMs/ 2>> /tmp/error' % (base_output,base_output),shell=True)
+            subprocess.call('mv %s %s %s/BAMs/ 2>> /tmp/error' % (tumor_bam, normal_bam, base_output),shell=True)
 
         subprocess.call('mv %s* %s/ 2>> /tmp/error' % (base_output,base_output),shell=True)
     except:
@@ -323,7 +335,7 @@ def IR_download_somatic_variant_zip(basename,variant_link,analysis_type):
                                   unzip -q %s*.zip; \
                                   cp ./Variants/*/*.vcf %s.ionreporter.%s_temp.vcf && cp ./Variants/*/*.tsv %s.ionreporter.%s_temp.tsv; \
                                   rm -rf IR_somatic.zip %s*.zip QC Variants Workflow_Settings VER*.log""" % (variant_link,basename,basename,analysis_type,basename,analysis_type,basename)], shell=True, stdout=subprocess.PIPE)
-
+        output, err = proc.communicate()
         files = ["%s.ionreporter.%s_temp.vcf" % (basename, analysis_type),
                  "%s.ionreporter.%s_temp.tsv" % (basename, analysis_type)]
         
@@ -411,6 +423,8 @@ def select_target_regions(regions):
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/CHPv2/CHP2.20131001.designed.bed"
         elif regions=="TSC":
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/TSC1-TSC2/TSC1_2.designed.bed"
+        elif regions=="TFNA":
+            REGIONS_FILE = "/home/michael/YNHH/Reference_Files/TFNA/Yale_Thyroid_DNA_WG_99191_167.1.20160607/WG_99191_167.1.20160607.designed.bed"
         else:
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/CCPHSMV2_052013.bed"
             print "WARNING: No bed file was selected.  Defaulting to using CCP regions to capture as much data as possible."
@@ -484,12 +498,13 @@ def muTect_caller_command(MUTECT_EXE,REGIONS_FILE,MUTECT_V1_PON,dbsnp_vcf,cosmic
 
 def muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_V1_PON,dbsnp_vcf,cosmic_vcf,REF_FASTA,normal_bam,tumor_bam,base_output):
     try:
-        mutect2_command = "java -jar %s --analysis_type MuTect2 --reference_sequence %s -L %s --normal_panel %s --cosmic %s --dbsnp %s --input_file:normal %s --input_file:tumor %s -o %s.mutect2.somatic.unfiltered.vcf --max_alt_allele_in_normal_fraction 0.1 -nct 8 --minPruning 10 --kmerSize 60  2>> %s.mutect2.log" % (GATK_LATEST_EXE,REF_FASTA,REGIONS_FILE,MUTECT2_V1_PON,cosmic_vcf,dbsnp_vcf,normal_bam,tumor_bam,base_output, base_output)
-        print "#" * len(mutect2_command)
-        print "MUTECT2 SOMATIC CALLING COMMAND:"
-        print mutect2_command
-        print "#" * len(mutect2_command)   
-        subprocess.call(mutect2_command,shell=True)
+        mutect2_command = "java -jar %s --analysis_type MuTect2 --reference_sequence %s -L %s --normal_panel %s --cosmic %s --dbsnp %s --input_file:normal %s --input_file:tumor %s -o %s.mutect2.somatic.unfiltered.vcf --max_alt_allele_in_normal_fraction 0.1 -nct 8 --minPruning 10 --kmerSize 60" % (GATK_LATEST_EXE,REF_FASTA,REGIONS_FILE,MUTECT2_V1_PON,cosmic_vcf,dbsnp_vcf,normal_bam,tumor_bam,base_output)
+        print """#--------------------MUTECT2 SOMATIC CALLING--------------------#"""
+        print "MUTECT2 SOMATIC CALLING COMMAND:", mutect2_command
+        log = open('%s.mutect2.log' % base_output, 'w')
+        subprocess.call(mutect2_command,shell=True, stdout=log, stderr=log)
+        log.close()
+        
         return "%s.mutect2.somatic.unfiltered.vcf" % base_output
     except:
         print "ERROR: MuTect failed"
@@ -512,15 +527,19 @@ def Strelka_somatic_variant_calling_command(STRELKA_EXE,normal_bam,tumor_bam,REF
     try:
         strelka_analysis_dir = '%s/strelka_analysis' % os.getcwd()
         strelka_command = "perl %s --normal=%s --tumor=%s --ref=%s --config=%s --output-dir=%s; make -j 16 -C %s &> %s.strelka.log" % (STRELKA_EXE,os.path.abspath(normal_bam),os.path.abspath(tumor_bam),REF_FASTA,STRELKA_CONFIG,strelka_analysis_dir,strelka_analysis_dir, base_output)
-        print "#" * len(strelka_command)
-        print "STRELKA SOMATIC CALLING COMMAND:"
-        print strelka_command
-        print "#" * len(strelka_command)   
-        subprocess.call("perl %s --normal=%s --tumor=%s --ref=%s --config=%s --output-dir=%s 2>> %s.strelka.log" % (STRELKA_EXE,os.path.abspath(normal_bam),os.path.abspath(tumor_bam),REF_FASTA,STRELKA_CONFIG,strelka_analysis_dir,base_output),shell=True)
-        subprocess.call("make -j 16 -C %s 2>> %s.strelka.log" % (strelka_analysis_dir, base_output), shell=True) 
+        print """#--------------------STRELKA SOMATIC CALLING--------------------#"""
+        print "STRELKA SOMATIC CALLING COMMAND:", strelka_command
+        
+        log = open('%s.strelka.log' % base_output, 'w')
+           
+        subprocess.call("perl %s --normal=%s --tumor=%s --ref=%s --config=%s --output-dir=%s" % (STRELKA_EXE,os.path.abspath(normal_bam),os.path.abspath(tumor_bam),REF_FASTA,STRELKA_CONFIG,strelka_analysis_dir),shell=True, stdout=log, stderr=log)
+        subprocess.call("make -j 16 -C %s" % (strelka_analysis_dir), shell=True, stdout=log, stderr=log) 
+        log.close()
+        
         vcf_list = ['%s/results/passed.somatic.indels.vcf' % strelka_analysis_dir,
                     '%s/results/passed.somatic.snvs.vcf' % strelka_analysis_dir]
         print vcf_list
+        
         return vcf_list
     except:
         print "ERROR: Strelka somatic variant calling failed"
@@ -532,3 +551,323 @@ def determine_num_variants_in_vcf(vcf):
     """This is a quick and dirty way to count variants in a VCF (does not account for multi-allelic sites)"""
     num_variants = subprocess.check_output("grep -vc '^#' %s" % vcf,shell=True)
     return num_variants
+
+def sample_attribute_autodetection(basename, pipeline_version, panel):
+    print """#--------------------SAMPLE ATTRIBUTE AUTODETECTION--------------------#"""
+    
+    def redefine_Downstream_panel_name(panel):
+        """Redefines panel name to be recognized by Downstream."""
+        if panel=='HSM' or panel=='CHPv2':
+            panel = '50 gene panel'
+        elif panel=='CCP' or panel=='409':
+            panel = '409 gene panel'
+        elif panel=='OCP':
+            panel = 'Oncomine panel'
+        else:
+            panel = panel
+        
+        return panel
+    
+    def check_if_tpl_spreadsheet_exists():
+        """Checks if TPL spreadsheet is mounted and exists."""
+        if os.path.isfile("/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/2016 TP stats.xlsx"):
+            return "/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/2016 TP stats.xlsx"
+        else:
+            print "WARNING: Could not find the TP spreadsheet.  Attempting to troubleshoot the error..."
+            if os.path.isdir("/media/Tumor_Profiling_N_Drive/"):
+                sys.exit("ERROR: N Drive is successfully mounted.  Where did the sheet go?  Re-check the filename")
+            else:
+                sys.exit("ERROR: N Drive is not mounted.  Exiting...")
+    
+    
+    def col2num(col):
+        """Converts Excel column in letter format to column number."""
+        num = 0
+        for c in col:
+            if c in string.ascii_letters:
+                num = num * 26 + (ord(c.upper()) - ord('A')) + 1
+        return num
+    
+    def append_entry_to_dict(sheet_obj, sheet_entries):
+        """Append entry in spreadsheet to dict."""
+        
+        def get_max_column_and_row(sheet_obj):
+            """Takes a spreadsheet object and returns a list with [max_column,max_row].
+            Bases max_row and max_column calculations on first "None" that is encountered.
+            """
+        
+            row_counter = 1
+            
+            for row in sheet_obj.iter_rows():
+                if row_counter > 1:
+                    # if column 1 is None, max_row = this row
+                    if sheet_obj.cell(row=row_counter, column=1).value is not None:
+                        max_row = sheet_obj.cell(row=row_counter, column=1).row
+                    else:
+                        break
+                else:
+                    for _cell in row:
+                        if _cell.value is None:
+                            break
+                        else:
+                            max_column = _cell.column
+                row_counter += 1
+    
+            return [max_column, max_row]
+        
+        
+        max_column, max_row = get_max_column_and_row(sheet_obj)    
+        
+        headers = []
+        row_counter = 1
+        for row in sheet_obj.iter_rows("A1:%s%s" % (max_column, max_row)):
+            if row_counter > 1:
+                values = []
+                for cell in row:
+                    values.append(cell.value)
+                sheet_entries[sheet_name].append(dict(zip(headers,values)))
+            else:
+                for cell in row:
+                    headers.append(cell.value)
+                    if cell.value is None: # or cell.value == "":
+                        break
+            row_counter += 1
+    
+    def reformat_copath_id_format(test_string):
+        """Reformats coPath ID if in X15-03344 format with 0 before numbers.
+        Sometimes, the ID is entered into the spreadsheet without a preceding 0.
+        """
+        
+        if re.search("-\d{5}", test_string):
+            if re.search("-0\d{4}", test_string):
+                "WARNING: Reformatting coPath ID"
+                match = re.search("(\w+?)-0(\d{4})", test_string)
+                id_part_one = match.group(1)
+                id_part_two = match.group(2)
+                test_string = "%s-%s" % (id_part_one, id_part_two)
+                return [test_string, True]
+            else:
+                return [test_string, False]
+        elif re.search("-\d{4}", test_string):
+            match = re.search("(.+)-(\d){4}", test_string)
+            return [test_string, False]
+        else:
+            "WARNING: %s is not in proper format.  Chances are we won't find any automatic annotations when searching." % test_string
+    
+    def write_specimen_json(basename, output_match_dict):
+        """Write $basename.specimen.json."""
+        
+        try:
+            with open('%s.specimen.json' % basename, 'w') as specimen_json_out:
+                json.dump(output_match_dict, specimen_json_out)
+            print "SUCCESS: %s.specimen.json was created" % basename       
+        except:
+            print "FAIL: Could not create %s.specimen.json" % basename
+    
+    def dict_clean(items):
+        result = {}
+        for key, value in items:
+            if value is None:
+                value = 'Unknown'
+            result[key] = value
+        return result
+    
+    def search_sheet_entries_for_id(copath_test, sheet_name, sheet_entries):
+        """Search sheet_entries dict for query ID."""
+         
+        output_match = {}
+        for sheet_name in sheet_entries.keys():
+            for entry in sheet_entries[sheet_name]:
+                
+                # need these headers to populate some output in specimen.json
+                # will try to use as much info from standard pipeline variables (e.g. panel, pipeline_version)
+                necessary_headers = ['CoPath #',
+                                     'laser/ manual MD',
+                                     '% Malignant cells',
+                                     'Tumor type',
+                                     'Tumor Source']
+                missing_headers = []
+                
+                    
+                if all(x in entry.keys() for x in necessary_headers):
+                    if entry['CoPath #'] == copath_test:
+                        print "SUCCESS: All headers detected"
+                        print "SUCCESS: We have a match in the TP spreadsheet"
+                
+                        try:
+                            output_match['pipeline_version'] = pipeline_version
+                        except:
+                            print "FAIL: Could not define 'pipeline_version'"
+                            output_match['pipeline_version'] = ''
+                        try:
+                            output_match['dissection'] = entry['laser/ manual MD']
+                        except:
+                            print "FAIL: Could not define 'dissection'"
+                            output_match['dissection'] = ''
+                        try:
+                            output_match['malignant_cells'] = "{0:.0f}%".format(float(entry['% Malignant cells']) * 100)
+                        except:
+                            print "FAIL: Could not define 'malignant_cells'"
+                            output_match['malignant_cells'] = ''
+                        try:
+                            output_match['tumor'] = entry['Tumor type'] + ", " + entry['Tumor Source']
+                        except:
+                            print "FAIL: Could not define 'tumor'"
+                            output_match['tumor'] = ''
+                        try:
+                            output_match['normal'] = entry['Normal Source']
+                        except:
+                            print "FAIL: Could not define 'normal'"
+                            output_match['normal'] = ''
+                        try:
+                            output_match['requested_by'] = entry['Requesting Physician']
+                        except:
+                            print "FAIL: Could not define 'requested_by'"
+                            output_match['requested_by'] = ''
+                        try:
+                            output_match['panel'] = panel
+                        except:
+                            print "FAIL: Could not define 'requested_by'"
+                            output_match['panel'] = ''
+                else:
+                    for necessary_header in necessary_headers:
+                        if not necessary_header in entry.keys():
+                            if necessary_header != 'CoPath#' and 'CoPath #' in entry.keys():
+                                # Let's slowly try to parse out certain values
+                                try:
+                                    output_match['pipeline_version'] = pipeline_version
+                                except:
+                                    print "FAIL: Could not define 'pipeline_version'"
+                                    output_match['pipeline_version'] = ''
+                                try:
+                                    output_match['dissection'] = entry['laser/ manual MD']
+                                except:
+                                    print "FAIL: Could not define 'dissection'"
+                                    output_match['dissection'] = ''
+                                try:
+                                    output_match['malignant_cells'] = "{0:.0f}%".format(float(entry['% Malignant cells']) * 100)
+                                except:
+                                    print "FAIL: Could not define 'malignant_cells'"
+                                    output_match['malignant_cells'] = ''
+                                try:
+                                    output_match['tumor'] = entry['Tumor type'] + ", " + entry['Tumor Source']
+                                except:
+                                    print "FAIL: Could not define 'tumor'"
+                                    output_match['tumor'] = ''
+                                try:
+                                    output_match['normal'] = entry['Normal Source']
+                                except:
+                                    print "FAIL: Could not define 'normal'"
+                                    output_match['normal'] = ''
+                                try:
+                                    output_match['requested_by'] = entry['Requesting Physician']
+                                except:
+                                    print "FAIL: Could not define 'requested_by'"
+                                    output_match['requested_by'] = ''
+                                try:
+                                    output_match['panel'] = panel
+                                except:
+                                    print "FAIL: Could not define 'requested_by'"
+                                    output_match['panel'] = ''
+                                    
+                                    
+                            else:
+                                # Create default specimen.json file if CoPath # does not exist in spreadsheet
+                                print "FAIL: Need CoPath # to retrieve sample information.  Creating default specimen.json file"
+                                
+                                try:
+                                    output_match['pipeline_version'] = pipeline_version
+                                except:
+                                    print "FAIL: Could not define 'pipeline_version'"
+                                try:
+                                    output_match['dissection'] = ""
+                                except:
+                                    print "FAIL: Could not define 'dissection'"
+                                try:
+                                    output_match['malignant_cells'] = ""
+                                except:
+                                    print "FAIL: Could not define 'malignant_cells'"
+                                try:
+                                    output_match['tumor'] = ""
+                                except:
+                                    print "FAIL: Could not define 'tumor'"
+                                try:
+                                    output_match['normal'] = ""
+                                except:
+                                    print "FAIL: Could not define 'normal'"
+                                try:
+                                    output_match['panel'] = panel
+                                except:
+                                    print "FAIL: Could not define 'requested_by'"
+    
+        return output_match
+    
+    panel = redefine_Downstream_panel_name(panel)
+    # Check if TP stats spreadsheet exists
+    spreadsheet_path = check_if_tpl_spreadsheet_exists()
+    # Load workbook
+    spreadsheet = load_workbook(spreadsheet_path, data_only=True)
+    # Get sheet names
+    sheet_names = spreadsheet.get_sheet_names()
+    # Initialize defaultdict
+    sheet_entries = defaultdict(list)
+    # Pop sheet_names that are incompatible with pipeline
+    sheet_names.remove("Research")
+    sheet_names.remove("TaqMan Cases")
+    # Create a dict of entries from each sheet
+    for sheet_name in sheet_names:
+        sheet_obj = spreadsheet.get_sheet_by_name(sheet_name)
+        append_entry_to_dict(sheet_obj, sheet_entries)
+
+
+    # Search dict entries for ID that matches query ID
+    output_match = search_sheet_entries_for_id(basename, sheet_name, sheet_entries)
+    
+    if not output_match:
+        reformatted_basename, reformatted_bool = reformat_copath_id_format(basename)
+        if reformatted_bool is True:
+            output_match = search_sheet_entries_for_id(reformatted_basename, sheet_name, sheet_entries)
+        else:
+            print "WARNING: No matches on %s" % copath_test
+    
+    if output_match:
+        dict_str = json.dumps(output_match)
+        output_match = json.loads(dict_str, object_pairs_hook=dict_clean)
+        pp = PrettyPrinter(indent=4)
+        pp.pprint(output_match)
+        write_specimen_json(basename, output_match)
+
+def extract_fusion_VCF_information(vcf):
+    """Extracts information from the ionreporter.fusions.vcf file."""
+    
+    fusion_dict = defaultdict(dict)
+    fusion_dict['sum_control_count'] = 0
+    
+    with open(vcf) as f:
+        for line in f.readlines():
+            line = line.strip()
+            
+            if re.search("##mapd", line):
+                match = re.search("##mapd=(.*)", line)
+                mapd = match.group(1)
+                fusion_dict['mapd'] = mapd
+            elif re.search("SVTYPE=GeneExpression", line):
+                split_line = line.split("\t")
+                gene_match = re.search("GENE_NAME=(.+?);", line)
+                gene = gene_match.group(1)
+                read_count_match = re.search("READ_COUNT=(.+?);", line)
+                read_count = read_count_match.group(1)
+                fusion_dict['gene_expression_read_counts'][gene] = read_count
+            elif re.search("SVTYPE=ExprControl", line):
+                gene_match = re.search("GENE_NAME=(.+?);", line)
+                gene = gene_match.group(1)
+                read_count_match = re.search("READ_COUNT=(.+?);", line)
+                read_count = read_count_match.group(1)
+                fusion_dict['control_per_gene_read_counts'][gene] = read_count
+                fusion_dict['sum_control_count'] += int(read_count)
+            elif re.search("##TotalMappedFusionPanelReads", line):
+                match = re.search("##TotalMappedFusionPanelReads=(.*)", line)
+                total_mapped_fusion_reads = match.group(1)
+                fusion_dict['total_mapped_fusion_reads'] = total_mapped_fusion_reads
+
+    return fusion_dict

@@ -56,7 +56,7 @@ def SnpSift_filter(vcf_in,SnpSift,regex_filter,base_output,program):
 def VEP_command_unfiltered(VEP,REF_FASTA,base_output,program):
     print "Annotating file..."
     try:
-        subprocess.call('perl %s --quiet --cache --merged --offline --fasta %s -i %s.%s.vcf --everything --check_alleles --cache_version 83 --no_intergenic --json -o %s.%s.json -fork 16 2>> /tmp/error' % (VEP,REF_FASTA,base_output,program,base_output,program),shell=True)
+        subprocess.call('perl %s --quiet --cache --merged --offline --fasta %s -i %s.%s.vcf --everything --check_alleles --cache_version 83 --json -o %s.%s.json -fork 16 2>> /tmp/error' % (VEP,REF_FASTA,base_output,program,base_output,program),shell=True)
     except:
         print "ERROR: Could not initiate annotation on VCF file"
 
@@ -330,6 +330,8 @@ def select_target_regions(regions):
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/TSC1-TSC2/TSC1_2.designed.bed"
         elif regions=="TP53":
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/TP53-panel/TP53.20140108.designed.bed"
+        elif regions=="TFNA":
+            REGIONS_FILE = "/home/michael/YNHH/Reference_Files/TFNA/Yale_Thyroid_DNA_WG_99191_167.1.20160607/WG_99191_167.1.20160607.designed.bed"
         else:
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/CCPHSMV2_052013.bed"
             print "WARNING: No bed file was selected.  Defaulting to using CCP regions to capture as much data as possible."

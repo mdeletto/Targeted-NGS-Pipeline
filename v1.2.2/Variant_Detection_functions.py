@@ -364,6 +364,8 @@ def select_target_regions(regions):
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/TSC1-TSC2/TSC1_2.designed.bed"
         elif regions=="TP53":
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/TP53-panel/TP53.20140108.designed.bed"
+        elif regions=="TFNA":
+            REGIONS_FILE = "/home/michael/YNHH/Reference_Files/TFNA/Yale_Thyroid_DNA_WG_99191_167.1.20160607/WG_99191_167.1.20160607.designed.bed"
         else:
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/CCPHSMV2_052013.bed"
             print "WARNING: No bed file was selected.  Defaulting to using CCP regions to capture as much data as possible."
