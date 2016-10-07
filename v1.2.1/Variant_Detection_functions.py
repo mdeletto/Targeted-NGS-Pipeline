@@ -319,9 +319,9 @@ def select_target_regions(regions):
     try:
         print "Selecting target regions..."
         if regions=="CCP":
-            REGIONS_FILE = "/home/michael/YNHH/Reference_Files/CCPHSMV2_052013.bed"
+            REGIONS_FILE = "/home/michael/YNHH/Reference_Files/CCP/CCPHSMV2_052013.bed"
         elif regions=="OCP":
-            REGIONS_FILE = "/home/michael/YNHH/Reference_Files/OCP3v1.20140718.designed.bed"
+            REGIONS_FILE = "/home/michael/YNHH/Reference_Files/OCP/OCP3v1.20140718.designed.bed"
         elif regions=="BRCA":
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/BRCA1-2/BRCA1_2.20131001.designed.bed"
         elif regions=="CHPv2" or regions=="HSM":

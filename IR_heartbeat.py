@@ -298,7 +298,7 @@ def run_pipeline():
                       workflow_dict[key]['normal_bam_name'], workflow_dict[key]['somatic_analysis']['somatic_analysis_name'], workflow_dict[key]['somatic_analysis']['somatic_analysis_id'], fusion_parameters)                               
         
         # For QC samples, we don't want any calls to be filtered based on consequence
-        if re.search("QC", key):
+        if re.search("QC", key) or re.search("TFNA", key):
             command += " --disable_filtering=True"
      
         command = " ".join(command.split())
@@ -587,7 +587,7 @@ for sample_name in workflow_dict.keys():
                 except Exception, e:
                     print "ERROR: Unknown error: %s" % (str(e)) 
     
-        elif re.search("Comprehensive Cancer Panel", workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']) or re.search("HSM", workflow_dict[sample_name]['panel_name']):
+        elif re.search("Comprehensive Cancer Panel", workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']) or re.search("HSM", workflow_dict[sample_name]['panel_name']) or re.search("TFNA", workflow_dict[sample_name]['panel_name']):
             
             if re.search("SUCCESSFUL", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status']):
                 
