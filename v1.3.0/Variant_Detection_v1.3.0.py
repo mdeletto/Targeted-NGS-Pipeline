@@ -15,7 +15,7 @@ from Variant_Detection_functions import *
 #-------------------------------------------------------------------------------------------
 
 desc="""A pipeline for somatic, germline, and LOH variant detection and annotation for both IonTorrent and Illumina data."""
-vers="1.3"
+vers="1.3.0"
 
 parser = optparse.OptionParser(description=desc,version=vers)
 
