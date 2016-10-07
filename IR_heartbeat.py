@@ -79,7 +79,7 @@ def set_IR_API_key_based_on_url(url):
 
 def set_pipeline_version(pipeline_version):
     if pipeline_version=="1.2.1":
-        TARGETED_NGS_PIPELINE = "/home/michael/bin/galaxy-dist/tools/MikeTools/Bioinformatics_Pipeline_v%s_Detection_and_Annotation/Variant_Detection_v%s.py" % (pipeline_version, pipeline_version)
+        TARGETED_NGS_PIPELINE = "/home/michael/YNHH/Code/Github-mdeletto/Targeted-NGS-Pipeline/v%s/Variant_Detection_v%s.py" % (pipeline_version, pipeline_version)
     else:
         sys.exit("ERROR: Pipeline Version %s is unsupported" % pipeline_version)
     return TARGETED_NGS_PIPELINE
