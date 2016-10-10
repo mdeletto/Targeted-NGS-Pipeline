@@ -172,7 +172,7 @@ def VEP_command_filtered(VEP,REF_FASTA,base_output,program,vcf_in):
 def move_files_to_new_subdirectory(tumor_bam, normal_bam, base_output,galaxy_flag):
     print "Moving files to new directory named %s to prepare for final spreadsheet processing..." % base_output
     try:
-        subprocess.call('/usr/lib/jvm/java-8-oracle/jre/bin/java -jar %s -f %s.varscan.json %s.ionreporter.no_cnv.json %s.ionreporter.cnv.vcf %s.ionreporter.tsv' % (EDDY,base_output,base_output,base_output,base_output),shell=True)
+        #subprocess.call('/usr/lib/jvm/java-8-oracle/jre/bin/java -jar %s -f %s.varscan.json %s.ionreporter.no_cnv.json %s.ionreporter.cnv.vcf %s.ionreporter.tsv' % (EDDY,base_output,base_output,base_output,base_output),shell=True)
         mkdir_p("%s/%s" %(os.getcwd(),base_output))
         
         if galaxy_flag is False:
@@ -483,7 +483,7 @@ def multibreak_vcf(VCFLIB_DIR,vcf,base_output,description):
 def combine_vcf(VCFLIB_DIR,vcf_list,base_output,description):
     try:
         vcfs = " ".join(vcf_list)
-        print '%s/vcfcombine %s > %s.%s.vcf' % (VCFLIB_DIR,vcfs,base_output,description)
+        #print '%s/vcfcombine %s > %s.%s.vcf' % (VCFLIB_DIR,vcfs,base_output,description)
         subprocess.call('%s/vcfcombine %s > %s.%s.vcf' % (VCFLIB_DIR,vcfs,base_output,description),shell=True)
         return "%s.%s.vcf" % (base_output, description)
     except:

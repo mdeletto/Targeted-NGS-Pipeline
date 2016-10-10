@@ -78,7 +78,10 @@ def set_IR_API_key_based_on_url(url):
     return IR_API_KEY
 
 def set_pipeline_version(pipeline_version):
-    if pipeline_version=="1.2.1":
+    supported_versions = ['1.2.1',
+                          '1.3.0']
+    
+    if pipeline_version in supported_versions:
         TARGETED_NGS_PIPELINE = "/home/michael/YNHH/Code/Github-mdeletto/Targeted-NGS-Pipeline/v%s/Variant_Detection_v%s.py" % (pipeline_version, pipeline_version)
     else:
         sys.exit("ERROR: Pipeline Version %s is unsupported" % pipeline_version)
@@ -304,6 +307,47 @@ def run_pipeline():
         command = " ".join(command.split())
         print command
         subprocess.call(command, shell=True)
+        
+    elif opts.pipeline_version=="1.3.0":
+        if workflow_dict[key]['fusion_analysis']['fusion_analysis_name'] is None or re.search("None", workflow_dict[key]['fusion_analysis']['fusion_analysis_name']):
+            fusion_parameters = ""
+        else:
+            fusion_parameters = """--ionreporter_fusion_url_bool \
+                                   --ionreporter_fusion_analysis_name=%s \
+                                   --ionreporter_fusion_id=%s""" % (workflow_dict[key]['fusion_analysis']['fusion_analysis_name'],
+                                                                    workflow_dict[key]['fusion_analysis']['fusion_analysis_id'] )
+        
+        if workflow_dict[key]['germline_analysis']['germline_analysis_name'] is None or re.search("None", workflow_dict[key]['germline_analysis']['germline_analysis_name']):
+            germline_parameters = ""
+        else:
+            germline_parameters = """--ionreporter_germline_url_bool \
+                                   --ionreporter_germline_analysis_name=%s \
+                                   --ionreporter_germline_id=%s""" % (workflow_dict[key]['germline_analysis']['germline_analysis_name'],
+                                                                    workflow_dict[key]['germline_analysis']['germline_analysis_id'] )
+        
+
+
+        command = """%s \
+            -s All-HC \
+            -c %s \
+            --regions=%s \
+            -t %s \
+            -n %s \
+            -p IonTorrent \
+            --ionreporter_version=4.4 \
+            --ionreporter_somatic_url_bool \
+            --ionreporter_somatic_analysis_name %s \
+            --ionreporter_somatic_id %s \
+            %s %s""" % (TARGETED_NGS_PIPELINE, sample_name, workflow_dict[key]['panel_name'], workflow_dict[key]['tumor_bam_name'],
+                      workflow_dict[key]['normal_bam_name'], workflow_dict[key]['somatic_analysis']['somatic_analysis_name'], workflow_dict[key]['somatic_analysis']['somatic_analysis_id'], fusion_parameters, germline_parameters)                               
+        
+        # For QC samples, we don't want any calls to be filtered based on consequence
+        if re.search("QC", key) or re.search("TFNA", key):
+            command += " --disable_filtering=True"
+     
+        command = " ".join(command.split())
+        print command
+        subprocess.call(command, shell=True)
 
 #####################################
 #---DYNAMIC ENVIRONMENT VARIABLES---#
@@ -518,7 +562,7 @@ for sample_name in workflow_dict.keys():
     if es.exists(index='dna-seq', doc_type='pipeline-analysis-overview-test', id=sample_name):
         print "ERROR: %s exists in database...passing..." % sample_name
     else:
-        if re.search("Oncomine Comprehensive Panel",workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']):
+        if re.search("Oncomine Comprehensive",workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']):
             
             if re.search("SUCCESSFUL", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status']):
             
