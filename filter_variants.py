@@ -312,7 +312,7 @@ def apply_summary_filters(wb,sheetname,indices,transcript_id_row_dict,colocated_
                 else:
                     pass
 
-            # Add IGV hyperlink\
+            # Add IGV hyperlink
             pos_as_int = int(pos.value)
             pos.value = '=HYPERLINK("http://localhost:60151/goto?locus=%s:%s", "%s")' % (chrom.value, str(int(pos.value)), str(int(pos.value)))
             pos.font = Font(name="Liberation Sans",size=10,color=BLUE)
@@ -400,7 +400,7 @@ def apply_CNV_filter(wb,sheetname,indices):
             confidence_score = cnv_sheet.cell(row=row_counter,column=indices.confidence)
             precision_score = cnv_sheet.cell(row=row_counter,column=indices.precision)
             comment = cnv_sheet.cell(row=row_counter,column=indices.comment)
-            if confidence_score.value < 20:
+            if float(confidence_score.value) < 20:
                 comment.value = "Confidence score less than 20"
                 for cell in row:
                     cell.font = Font(name="Liberation Sans",size=10,color='909090')
@@ -787,7 +787,7 @@ def perform_monthly_QC_check(wb, variant_summary_dict):
 def main():
     parse_command_line(opts)
     try:
-        wb = openpyxl.load_workbook(opts.input)
+        wb = openpyxl.load_workbook(opts.input, data_only=True)
     except:
         print "ERROR: Could not open input file..."
         print "ERROR: Program is exiting..."

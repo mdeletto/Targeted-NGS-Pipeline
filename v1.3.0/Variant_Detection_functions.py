@@ -181,8 +181,7 @@ def move_files_to_new_subdirectory(tumor_bam, normal_bam, base_output,galaxy_fla
             subprocess.call('mv %s*temp* %s/tmp/ 2>> /tmp/error' % (base_output,base_output),shell=True)           
 
             mkdir_p("%s/%s/BAMs" %(os.getcwd(),base_output))
-            subprocess.call('mv %s %s %s/BAMs/ 2>> /tmp/error' % (tumor_bam, normal_bam, base_output),shell=True)
-
+            subprocess.call('mv %s* %s* %s/BAMs/ 2>> /tmp/error' % (tumor_bam, normal_bam, base_output),shell=True)
         subprocess.call('mv %s* %s/ 2>> /tmp/error' % (base_output,base_output),shell=True)
     except:
         print "ERROR: Failed to move files"
@@ -545,7 +544,7 @@ def Strelka_somatic_variant_calling_command(STRELKA_EXE,normal_bam,tumor_bam,REF
         print "ERROR: Strelka somatic variant calling failed"
 
 def extra_file_cleanup():
-    subprocess.call("rm -rf Variants Workflow_Settings QC STDOUT_summary.html VER*.log",shell=True)
+    subprocess.call("rm -rf Variants Workflow_Settings QC STDOUT_summary.html VER*.log strelka_analysis",shell=True)
 
 def determine_num_variants_in_vcf(vcf):
     """This is a quick and dirty way to count variants in a VCF (does not account for multi-allelic sites)"""

@@ -463,6 +463,8 @@ def main():
     
     edit_IR_tsv_file(opts.ionreporter_version,opts.ionreporter_somatic_tsv,opts.base_output)
     
+    extra_file_cleanup()
+    
     move_files_to_new_subdirectory(opts.tumor, opts.normal, opts.base_output, opts.galaxy_flag)
 
     if opts.galaxy_flag is True:
