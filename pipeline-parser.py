@@ -14,7 +14,7 @@ from natsort import natsorted
 import argparse
 
 def main():
-    vers="0.1"
+    vers="1.0"
     desc="""This tool is designed to parse pipeline output files and convert into a more readable format (e.g. a spreadsheet)"""
     parser = argparse.ArgumentParser(description=desc, version=vers)
     

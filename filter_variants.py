@@ -11,8 +11,9 @@ from collections import defaultdict
 #-------------------------------------------------------------------------------------------
 
 desc="""This script automatically applies filters to the DownstreamReporting spreadsheet.  At the time of authorship, filters are only set up for targeting sequencing panels only."""
+vers="1.0"
 
-parser = optparse.OptionParser(description=desc)
+parser = optparse.OptionParser(description=desc, version=vers)
 
 parser.add_option('-i', help='DownstreamReporting spreadsheet input (.xlsx only)', dest='input', action='store')
 parser.add_option('-p', help='Panel type <OCP,CCP,BRCA>', dest='panel', action='store', default=None) # This option is not currently used in the program, but will in the future to apply panel-specific filters.
