@@ -288,7 +288,7 @@ def main():
     if opts.regions == "CCP":
         MUTECT2_PON = MUTECT2_PON_CCP
         mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
-    elif opts.regions in ["CHPv2","HSM","OCP"]:
+    elif opts.regions in ["CHPv2","HSM","OCP","OCA"]:
         MUTECT2_PON = MUTECT2_PON_OCP
         mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
     else:

@@ -560,7 +560,7 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
             panel = '50 gene panel'
         elif panel=='CCP' or panel=='409':
             panel = '409 gene panel'
-        elif panel=='OCP':
+        elif panel=='OCP' or panel=='OCA':
             panel = 'Oncomine panel'
         else:
             panel = panel
@@ -677,7 +677,7 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
         output_match = {}
         for sheet_name in sheet_entries.keys():
             for entry in sheet_entries[sheet_name]:
-                
+                print sheet_name
                 # need these headers to populate some output in specimen.json
                 # will try to use as much info from standard pipeline variables (e.g. panel, pipeline_version)
                 necessary_headers = ['CoPath #',
