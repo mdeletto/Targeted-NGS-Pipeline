@@ -166,7 +166,7 @@ def select_analyses(all_IR_analyses):
     return names
 
 def execute_scp_bam_copy(path,bam_barcode_id):
-    subprocess.call("scp -q ionadmin@10.80.157.179:%s ." % path, shell=True)
+    subprocess.call("scp -i /home/michael/.ssh/id_rsa -q ionadmin@10.80.157.179:%s ." % path, shell=True)
     basename_process = subprocess.check_output("""basename -s .bam %s""" % bam_barcode_id,shell=True)
     local_bam_filepath_name = basename_process.strip()  
     return local_bam_filepath_name  
