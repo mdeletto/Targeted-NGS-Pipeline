@@ -535,7 +535,8 @@ for name in names:
                 else:
                     workflow_nested_dict['fusion_analysis'] = fusion_dict
                 
-                workflow_nested_dict['pipeline_start_date'] = datetime.datetime.strftime(datetime.datetime.now(), "%Y-%m-%d")
+                workflow_nested_dict['pipeline_start_date'] = datetime.datetime.strftime(datetime.datetime.utcnow(), "%Y-%m-%d")
+                workflow_nested_dict['pipeline_start_utc_timestamp'] = str(datetime.datetime.utcnow())
                 workflow_nested_dict['platform'] = 'IonTorrent'
                 workflow_nested_dict['pipeline_version'] = opts.pipeline_version
 
