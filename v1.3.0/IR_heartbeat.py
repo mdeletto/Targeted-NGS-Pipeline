@@ -9,14 +9,18 @@ import re
 import datetime
 import pprint
 import os
+import paramiko
+import pipes
 import pysam
 import shutil
 import glob
 import errno
+import time
 #import pymongo
 import MySQLdb
 from collections import defaultdict
 from elasticsearch import Elasticsearch
+from web.utils import dateify
 
 os.chdir("/home/michael/Cases/Clinical/Pending")
 
@@ -31,6 +35,7 @@ group = optparse.OptionGroup(parser, "General options")
 #group.add_option("--authorization","-a", help="Authorization API key for IonReporter",dest='auth_key',action='store')
 group.add_option("--ionreporter_url","-i", help="IP address or hostname of IR server (ex: 10.80.157.179)",dest='url',action='store',default="10.80.157.179")
 group.add_option("--analysis_date","-d", help="Pull IR analyses from this date.  YYYY-mm-dd format required (e.g. %default).  Default date for analysis is today!",dest='date',action='store',default=datetime.datetime.strftime(datetime.date.today(), "%Y-%m-%d"))
+group.add_option("--days", help="Number of days to look back at for IR analyses.  Default is to use all IR analyses.  However, by reducing the number of days, runtime will be faster.",dest='days',action='store',default=None)
 group.add_option("--download_bams_only","", help="Pull tumor and normal bams for a given analysis and quit",dest='bams_only',action='store_true',default=False)
 group.add_option("--pipeline_version","-p", help="Pipeline version to use.  Default is to use the latest pipeline (%default)",dest='pipeline_version',action='store',default="1.2.1")#datetime.date.today())
 group.add_option("-v", help="verbose <[%default]>", dest='verbose',action='store_true',default=False)
@@ -70,6 +75,7 @@ es = Elasticsearch()
 #--------FUNCTIONS------------#
 ###############################
 
+
 def set_IR_API_key_based_on_url(url):
     if url=="10.80.157.179":
         IR_API_KEY = "UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY"
@@ -104,7 +110,7 @@ def IR_locate_variant_zip(analysis_name,ionreporter_id,IR_url,authorization_key)
         if ionreporter_id is None:
             proc = subprocess.Popen(["""curl -k -H "Authorization:%s" "https://%s/webservices_42/rest/api/analysis?format=json&name=%s" 2> /dev/null""" % (authorization_key,IR_url,url_encoded_basename)],shell=True,stdout=subprocess.PIPE)
         else:
-            proc = subprocess.Popen(["""curl -k -H "Authorization:%s" "https://%s/webservices_42/rest/api/analysis?format=json&name=%s&id=%s" 2> /dev/null""" % (authorization_key,IR_url,url_encoded_basename,ionreporter_id)],shell=True,stdout=subprocess.PIPE)
+            proc = subprocess.Popen(["""curl -k -H "Authorization:%s" "https://%s/webservices_42/rest/api/analysis?format=json&id=%s" 2> /dev/null""" % (authorization_key,IR_url,ionreporter_id)],shell=True,stdout=subprocess.PIPE)
         output, err = proc.communicate()
     except:
         print "ERROR: Unable to communicate with server.  Check Authorization key, server address, and your network connectivity."
@@ -136,7 +142,17 @@ def IR_download_variant_zip(basename,variant_link,authorization_key):
             sys.exit(1)
 
 def IR_analysis_summary_view():
-    proc = subprocess.Popen(["""curl -k -H "Authorization:%s" "https://%s/webservices_42/rest/api/analysis?format=json&view=summary" 2> /dev/null""" % (IR_API_KEY,"10.80.157.179")],shell=True,stdout=subprocess.PIPE)
+    """Grabs the summary view from the IR API for analyses."""
+    
+    if opts.days is None:
+        proc = subprocess.Popen(["""curl -k -H "Authorization:%s" "https://%s/webservices_42/rest/api/analysis?format=json&view=summary" 2> /dev/null""" % (IR_API_KEY,"10.80.157.179")],shell=True,stdout=subprocess.PIPE)
+    else:
+        today = datetime.datetime.strptime(opts.date, "%Y-%m-%d")
+        today_formatted = today.strftime("%Y-%m-%d")
+        two_weeks_ago = today - datetime.timedelta(days=14)
+        two_weeks_ago_formatted = two_weeks_ago.strftime("%Y-%m-%d")
+        
+        proc = subprocess.Popen(["""curl -k -H "Authorization:%s" "https://%s/webservices_42/rest/api/analysis?format=json&view=summary&start_date=%s&end_date=%s" 2> /dev/null""" % (IR_API_KEY,"10.80.157.179", two_weeks_ago_formatted, today_formatted)],shell=True,stdout=subprocess.PIPE)
     output, err = proc.communicate()
     all_IR_analyses = json.loads(output)
     
@@ -145,8 +161,9 @@ def IR_analysis_summary_view():
 def select_analyses(all_IR_analyses):
     names = []
     date = format_date_to_string(opts.date)
+
     for analysis in all_IR_analyses:
-    
+
         if analysis['start_date'] == date: #and analysis['started_by'] == "Mike D'Eletto":
             if not re.search('-',analysis['name']) and not re.search('_',analysis['name']):
                 print "ERROR: Analysis string is not in correct format.  Please consult README for using this workflow.  Trying to proceed..."
@@ -162,6 +179,7 @@ def select_analyses(all_IR_analyses):
     
     
     names = list(set(names))
+    print names
     
     return names
 
@@ -273,7 +291,187 @@ def initiate_IR_download(workflow_dict,sample_name):
     
     bam_dict_options = download_bams_from_IR(IR_download_link, IR_download_dir, sample_name)  # downloads BAMs and return a dictionary consisting of bam names and filepaths
     workflow_dict[sample_name].update(bam_dict_options)
+
+def exists_remote(host, path):
+    """Test if a file exists at path on a host accessible with SSH."""
+    status = subprocess.call(
+        ['ssh', host, 'test -f {}'.format(pipes.quote(path))])
+    if status == 0:
+        return True
+    if status == 1:
+        return False
+    raise Exception('SSH failed')
+
+def determine_IR_basename_filepath(analysis_name,ionreporter_id,IR_url,authorization_key):
+    url_encoded_basename = urllib.quote_plus(analysis_name) # catch whitespace or other problematic characters and encode for url
     
+    try:
+        if ionreporter_id is None:
+            proc = subprocess.Popen(["""curl -k -H "Authorization:%s" "https://%s/webservices_42/rest/api/analysis?format=json&name=%s" 2> /dev/null""" % (authorization_key,IR_url,url_encoded_basename)],shell=True,stdout=subprocess.PIPE)
+        else:
+            proc = subprocess.Popen(["""curl -k -H "Authorization:%s" "https://%s/webservices_42/rest/api/analysis?format=json&id=%s" 2> /dev/null""" % (authorization_key,IR_url,ionreporter_id)],shell=True,stdout=subprocess.PIPE)
+        output, err = proc.communicate()
+        print output
+    except:
+        print "ERROR: Unable to communicate with server.  Check Authorization key, server address, and your network connectivity."
+        sys.exit(1)
+    try:
+        try:
+            data = json.loads(output)
+            #print json.dumps(data,indent=4)
+        except:
+            print "ERROR: Could not load json string"
+        unfiltered_variants = data[0]['data_links']['unfiltered_variants']
+        filtered_variants = data[0]['data_links']['filtered_variants']
+        return unfiltered_variants
+    except Exception,e:
+        #print str(e)
+        print "ERROR: Unable to process IonReporter links.  Is this a valid analysis name?  Aborting..."
+        return 0
+
+def ssh_cmd(current_host, command, sm_username=sm_username, sm_key=sm_key, sm_port=sm_port, print_stdout=True):
+    # make sure command ends in a new line
+    if not command.endswith('\n'):
+        command = command+'\n'
+    # establish our dict for returning
+    ssh_cmd_dict = {}
+    # fill in the stuff we know
+    ssh_cmd_dict['server'] = current_host
+    ssh_cmd_dict['command'] = command
+    # establish  our variables
+    server, username, keyfile, portnumber = ( current_host, sm_username , sm_key , sm_port )
+    # make the ssh object
+    ssh = paramiko.SSHClient()
+    # add new servers to known_hosts automatically
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    # try to establish the connection to server
+    try:
+        ssh.connect(server, username=username, key_filename=keyfile, port=portnumber )
+    except:
+        # record connection failure
+        ssh_cmd_dict['connection_successful'] = False
+        # if it doesn't work tell 'em
+        print('unable to connect to: '+server)
+        return ssh_cmd_dict
+    else:
+        # record connection success
+        ssh_cmd_dict['connection_successful'] = True
+        # execute the command storing stdout, stdin, and stderr
+        stdin, stdout, stderr = ssh.exec_command(command)
+        # wait for exit status (that means command finished)
+        exit_status = stdout.channel.recv_exit_status()
+        
+        # End connection if stderr does not have EOF
+        timeout = 60
+        endtime = time.time() + timeout
+        while not stderr.channel.eof_received:
+            time.sleep(1)
+            if time.time() > endtime:
+                stderr.channel.close()
+                break
+
+        # flush commands and cut off more writes
+        stdin.flush()
+        stdin.channel.shutdown_write()
+
+        # close the connection
+        ssh.close()
+
+        # store the stdout
+        ssh_cmd_dict['stdout_raw'] = stdout.readlines()
+
+        # create an entry that is pretty to read
+        if type(ssh_cmd_dict['stdout_raw']) is ListType:
+            ssh_cmd_dict['stdout_print'] = "".join(ssh_cmd_dict['stdout_raw'])
+        ssh_cmd_dict['stdout'] = ssh_cmd_dict['stdout_raw']
+
+        # store stdin
+        ssh_cmd_dict['stdin'] = command
+
+        # store the stderr
+        ssh_cmd_dict['stderr_raw'] = stderr.readlines()
+        # create an entry for stderr that is pretty to read
+        if type(ssh_cmd_dict['stderr_raw']) is ListType:
+            ssh_cmd_dict['stderr_print'] = "".join(ssh_cmd_dict['stderr_raw'])
+        ssh_cmd_dict['stderr'] = ssh_cmd_dict['stderr_raw']
+
+        # store exit status
+        ssh_cmd_dict['exitstatus'] = exit_status
+
+        if exit_status > 0:
+            if ssh_cmd_dict['stderr'] is not None:
+                print('Unfortunately the command: '+command+' executed on server: '+server+' had a non-zero exit status. Below is the stderr:')
+                print(ssh_cmd_dict['stderr'])
+        else:
+            if print_stdout:
+                if ssh_cmd_dict['stdout_print'] is not None:
+                    print(ssh_cmd_dict['stdout_print'])
+        return ssh_cmd_dict
+
+
+def connect_to_IR_server_and_run_command(remote_command):
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect('10.80.157.179', username="ionadmin")
+    stdin, stdout, stderr = client.exec_command(remote_command)
+    exit_status = stdout.channel.recv_exit_status()
+    #print "returning immediately"
+    #return stdout
+    
+    timeout = 60
+    import time
+    endtime = time.time() + timeout
+    while not stderr.channel.eof_received:
+        time.sleep(1)
+        if time.time() > endtime:
+            stderr.channel.close()
+            break
+    
+    try:
+        print "reading stderr"
+        stderr.readlines()
+        print "read stderr"
+    except:
+        print "FAIL could not read stderr"
+    
+    if stderr.read() == "":
+        print "returning something"
+        return stdout
+    else:
+        print "returning something - with stderr"
+        print stderr.read()
+        return stdout
+        #sys.exit("ERROR: Failed to execute ssh command: %s\nERROR: %s" % (remote_command, stderr))
+
+def perform_qc_check(workflow_dict):
+    for basename in workflow_dict.keys():
+        
+        workflow_dict[basename]['qc']['comment'] = ""
+        workflow_dict[basename]['qc']['status'] = "PASS"
+        
+        if 'somatic_analysis' in workflow_dict[basename].keys():
+            try:
+                if not workflow_dict[basename]['qc']['mapd'] < 0.9:
+                    workflow_dict[basename]['qc']['status'] = "FAIL"
+                    workflow_dict[basename]['qc']['comment'] += "MAPD >= 0.9;"
+            except KeyError:
+                pass
+
+        if 'fusion_analysis' in workflow_dict[basename].keys():
+            try:
+                if workflow_dict[basename]['fusion_analysis']:
+                    if not workflow_dict[basename]['qc']['totalMappedFusionPanelReads'] >= 20000:
+                        workflow_dict[basename]['qc']['status'] = "FAIL"
+                        workflow_dict[basename]['qc']['comment'] += "totalMappedFusionPanelReads < 20,000;"
+            except KeyError:
+                pass
+            
+        if workflow_dict[basename]['qc']['comment'] == "":
+            workflow_dict[basename]['qc']['comment'] = None
+
+    return workflow_dict
+
 def run_pipeline():
     
     sample_name = key
@@ -368,6 +566,8 @@ if not os.path.exists(WORKING_DIRECTORY):
 #---CONTACT IR AND SELECT ANALYSES---#
 ######################################
 
+IR_API_KEY = set_IR_API_key_based_on_url(opts.url)
+
 # Connect to IR server and get basic summary view
 all_IR_analyses = IR_analysis_summary_view()
 
@@ -382,14 +582,14 @@ pp = pprint.PrettyPrinter(indent=4)
 
 # Cycle through unique identifiers and map to different analyses in the server
 for name in names:
-    
+
     header = "SEARCHING IR SERVER FOR ANALYSES RELATED TO: %s" % name
     print "-" * len(header)
     print header
     print "-" * len(header)
     
     repeat_flag = False
-    workflow_nested_dict, somatic_dict, germline_dict, fusion_dict = (defaultdict(lambda: None) for i in range(4))
+    workflow_nested_dict, somatic_dict, germline_dict, fusion_dict, qc_dict = (defaultdict(lambda: None) for i in range(5))
     workflow_dict[name] = workflow_nested_dict
     for analysis in all_IR_analyses:
         if (re.search(name,analysis['name']) or name==analysis['name'] or re.match(name,analysis['name'])) and analysis['start_date']==format_date_to_string(opts.date):
@@ -408,6 +608,17 @@ for name in names:
                 if re.search("SOMATIC",analysis['name'],re.IGNORECASE) or re.search("tumor-normal",analysis['workflow'], re.IGNORECASE):
                     print "Case %s has somatic analysis = %s" % (name,analysis['name'])
                     
+                    # Get base filepath on IR server
+                    somatic_base_filepath = determine_IR_basename_filepath(analysis['name'], analysis['id'], opts.url, IR_API_KEY)
+                    trash, dirpath = somatic_base_filepath.split("filepath=")
+                    dirpath = "/".join(dirpath.split("/")[:-1])
+                    print datetime.datetime.now()
+                    remote_command_output = connect_to_IR_server_and_run_command("grep '##mapd' %s/outputs/AnnotatorActor-00/annotated_variants.vcf" % dirpath)
+                    print datetime.datetime.now()
+                    match = re.search("##mapd=(.*)", remote_command_output.read().strip())
+                    mapd = round(float(match.group(1)), 3)
+                    qc_dict['mapd'] = mapd
+                    print qc_dict
                     # Handle repeat analyses by choosing a repeat analysis if it exists.
                     if re.search("repeat", analysis['name'], re.IGNORECASE):
                         repeat_flag = True
@@ -416,42 +627,11 @@ for name in names:
                         
                         if repeat_flag is True:
                             pass
-                        
                         else:
                             repeat_flag = False
                         
                     if repeat_flag is True and not re.search("repeat", analysis['name'], re.IGNORECASE):
                         pass
-                    
-                    elif repeat_flag is True and re.search("repeat", analysis['name'], re.IGNORECASE):
-                        somatic_dict['somatic_analysis_status'] = analysis['status']
-                        somatic_dict['somatic_analysis_name'] = analysis['name']
-                        somatic_dict['somatic_analysis_id'] = analysis['id']
-                        somatic_dict['somatic_tumor_name'] = analysis['samples']['TUMOR']
-                        somatic_dict['somatic_normal_name'] = analysis['samples']['NORMAL']
-                        somatic_dict['somatic_workflow'] = analysis['workflow']
-                        somatic_dict['somatic_workflow_start_date'] = datetime.datetime.strftime(datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y"), "%Y-%m-%d")
-                        try:
-                            if re.search("_", analysis['name']):
-                                workflow_nested_dict['panel_name'] = analysis['name'].split("_")[1]
-                            else:
-                                workflow_nested_dict['panel_name'] = analysis['name'].split("-")[2]
-                        except Exception, e:
-                            print "ERROR: Unable to define panel_name"
-                            print str(e)
-                        
-                        try:
-                            if re.search("_", analysis['name']):
-                                somatic_dict['somatic_analysis_project'] = analysis['name'].split("_")[3]
-                        except:
-                            print "WARNING: No project has been defined for analysis %s" % analysis['name']
-                        try:
-                            if re.search("_", analysis['name']):
-                                somatic_dict['somatic_analysis_comment'] = analysis['name'].split("_")[4]
-                        except:
-                            print "WARNING: No comment has been defined for analysis %s" % analysis['name']
-
-                        workflow_nested_dict['somatic_analysis'] = somatic_dict
 
                     else:
                         somatic_dict['somatic_analysis_status'] = analysis['status']
@@ -513,6 +693,33 @@ for name in names:
                 
                 if re.search("FUSION",analysis['name'],re.IGNORECASE) or re.search("FUSIONS",analysis['name'],re.IGNORECASE):
                     print "Case %s has fusion analysis = %s" % (name,analysis['name'])
+                    
+                    
+                    # Get base filepath on IR server
+                    somatic_base_filepath = determine_IR_basename_filepath(analysis['name'], analysis['id'], opts.url, IR_API_KEY)
+                    trash, dirpath = somatic_base_filepath.split("filepath=")
+                    dirpath = "/".join(dirpath.split("/")[:-1])
+                    print datetime.datetime.now()
+                    remote_command_output = connect_to_IR_server_and_run_command("cat %s/outputs/RNACountsActor-00/fusions.vcf" % dirpath)
+                    print datetime.datetime.now()
+                    # Extract FUSION QC info
+                    qc_dict['expr_control_sum'] = 0
+                    qc_dict['expr_control'] = defaultdict(dict)
+                    for line in remote_command_output:
+                        if re.search("SVTYPE=ExprControl", line):
+                            gene_match = re.search("GENE_NAME=(.+?);", line)
+                            gene = gene_match.group(1)
+                            read_count_match = re.search("READ_COUNT=(.+?);", line)
+                            read_count = int(read_count_match.group(1))
+                            qc_dict['expr_control'].update({gene : read_count})
+                            qc_dict['expr_control_sum'] += int(read_count)
+                        if re.search("##TotalMappedFusionPanelReads", line):
+                            match = re.search("##TotalMappedFusionPanelReads=(.*)", line)
+                            total_mapped_fusion_reads = int(match.group(1))
+                            qc_dict['totalMappedFusionPanelReads'] = total_mapped_fusion_reads
+                    
+                    print qc_dict
+                    
                     fusion_dict['fusion_analysis_status'] = analysis['status']
                     fusion_dict['fusion_analysis_name'] = analysis['name']
                     fusion_dict['fusion_analysis_id'] = analysis['id']
@@ -535,11 +742,15 @@ for name in names:
                 else:
                     workflow_nested_dict['fusion_analysis'] = fusion_dict
                 
+                workflow_nested_dict['qc'] = qc_dict
+                
                 workflow_nested_dict['pipeline_start_date'] = datetime.datetime.strftime(datetime.datetime.utcnow(), "%Y-%m-%d")
                 workflow_nested_dict['pipeline_start_utc_timestamp'] = str(datetime.datetime.utcnow())
                 workflow_nested_dict['platform'] = 'IonTorrent'
                 workflow_nested_dict['pipeline_version'] = opts.pipeline_version
 
+# Perform QC check
+workflow_dict = perform_qc_check(workflow_dict)
 
 # Print main dictionary for debugging purposes
 if opts.verbose is True: pp.pprint(json.loads(json.dumps(workflow_dict)))

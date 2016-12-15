@@ -43,7 +43,7 @@ def main():
             self.type = split_tsv_line[2]
             self.length = split_tsv_line[4]
             self.iscn = split_tsv_line[11]
-            match = re.search("x(\d)", self.iscn)
+            match = re.search("x(\d+?)", self.iscn)
             self.ploidy = match.group(1)
             
             self.confidence = split_tsv_line[12]
@@ -191,23 +191,26 @@ def main():
                     normal_order = split_input[9]        
                 else:
                     tumor_order = split_input[9]
-                    normal_order = split_input[10]
+                    try:
+                        normal_order = split_input[10]
+                    except:
+                        normal_order = ["UNK" for i in range(len(self.format_keys))]
                 try:
                     self.format_tumor_values = tumor_order.split(":")
                     tmp_dict = dict(zip(self.format_keys, self.format_tumor_values))
                     self.format_tumor_dict = defaultdict(lambda: "UNK", tmp_dict)
                     self.format_tumor = FORMAT_VCF_Fields(self.format_tumor_dict, reconstructed_file_basename, self.alt)
                 except Exception, e:
-                    print str(e)
-                    self.format_tumor_values = ""
+                    self.format_tumor_dict = defaultdict(lambda: "UNK")
+                    self.format_tumor = FORMAT_VCF_Fields(self.format_tumor_dict, reconstructed_file_basename, self.alt)
                 try:
                     self.format_normal_values = normal_order.split(":")
                     tmp_dict = dict(zip(self.format_keys, self.format_normal_values))
                     self.format_normal_dict = defaultdict(lambda: "UNK", tmp_dict)
                     self.format_normal = FORMAT_VCF_Fields(self.format_normal_dict, reconstructed_file_basename, self.alt)
                 except Exception, e:
-                    print str(e)
-                    self.format_tumor_values = ""
+                    self.format_normal_dict = defaultdict(lambda: "UNK")
+                    self.format_normal = FORMAT_VCF_Fields(self.format_normal_dict, reconstructed_file_basename, self.alt)
                 
             except:
                 self.format = ""
@@ -448,7 +451,7 @@ def main():
             
             with open(filename, "r") as f:
                 for line in f.readlines():
-                    
+                
                     class VariantEntry:
                         def __init__(self, line, filename):
     
@@ -1601,6 +1604,7 @@ def main():
         for f in detected_files:
             if f.endswith(".json") and not f.endswith(".specimen.json"):
                 detected_jsons.append(f)
+                print f
                 parse_variant_json(f)
         if detected_jsons:
             print "OK: DETECTED %s variant .json files" % len(detected_jsons)

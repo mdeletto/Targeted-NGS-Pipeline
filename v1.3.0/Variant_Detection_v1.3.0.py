@@ -34,6 +34,7 @@ parser.add_option("-p", action="store", help="Platform used for sequencing",dest
 group = optparse.OptionGroup(parser, "IonReporter inputs (for IonTorrent analyses)",
                              "IonReporter-specific inputs for IonTorrent data only")
 group.add_option("--ionreporter_only", action="store_true", help="Only run IR analyses", dest="ionreporter_only", default=False)
+group.add_option('--ionreporter_skip_all', help="Skip all IR analyses", dest='ionreporter_skip_all', action='store_true',default=False)
 group.add_option("--ionreporter_version", action="store", help="Please indicate IR version number (ex. 4.0, 4.4)", dest="ionreporter_version", default=4.4)
 group.add_option('--ionreporter_somatic_url_bool', help="Flag for if VCF is coming from IonReporter url", dest='ionreporter_somatic_url_bool', action='store_true',default=False)
 group.add_option('--ionreporter_somatic_analysis_name', help="Analysis name within IonReporter", dest='ionreporter_somatic_analysis_name', action='store')
@@ -96,7 +97,7 @@ BAM_READCOUNT_EXE = "/home/michael/bin/bam-readcount/bin/bin/bam-readcount"
 VCFLIB_DIR = "/home/michael/bin/vcflib/bin"
 MUTECT_EXE = "/home/michael/bin/mutect/muTect-1.1.7.jar"
 GATK_EXE = "/home/michael/bin/GATK/GenomeAnalysisTK.jar"
-GATK_LATEST_EXE = "/home/michael/bin/GATK-3.5/GenomeAnalysisTK.jar"
+GATK_LATEST_EXE = "/home/michael/bin/GATK-3.6/GenomeAnalysisTK.jar"
 STRELKA_EXE = '/home/michael/bin/strelka/bin/configureStrelkaWorkflow.pl'
 
 # REFERENCE FILES
@@ -115,6 +116,7 @@ MUTECT2_PON_CCP = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTec
 # POPULATION NORMALS
 
 POPULATION_NORMAL_BAM_OCP = '/home/michael/YNHH/Reference_Files/Population_Normal/Population_Normal.OCP.v1.bam'
+#POPULATION_NORMAL_BAM_OCP = '/home/michael/YNHH/Reference_Files/Population_Normal/simulated/Population_Normal.OCP.v1.simulated.bam'
 POPULATION_NORMAL_BAM_CCP = '/home/michael/YNHH/Reference_Files/Population_Normal/Population_Normal_PGM_v2.CCP.bam'
 
 # OTHER GLOBAL VARIABLES
@@ -174,94 +176,101 @@ def main():
     #samtools_mpileup(SAMTOOLS_EXE,opts.tumor,opts.normal,opts.base_output,REFERENCE_FASTA,REGIONS_FILE)
     
     #---COMMAND LINE CHECK FOR REMOTE IF VCF INPUT---#
-    
-    if opts.ionreporter_germline_url_bool == True:
-        print "Remote download of GERMLINE VCF from IonReporter initiated.  Please hold..."
-        url_encoded_ionreporter_germline_analysis_name = urllib.quote_plus(opts.ionreporter_germline_analysis_name)
-        try:
-            # Determine download link
-            link_and_barcodes_list = IR_locate_germline_variant_zip(url_encoded_ionreporter_germline_analysis_name, opts.ionreporter_germline_id)
-            variant_link, sample_barcode, control_barcode = (i for i in link_and_barcodes_list)
-            germline_sample_dict = {"sample": sample_barcode,
-                                    "control": control_barcode}
-            # Download analysis and process files
-            ionreporter_germline_unfiltered_vcf = IR_download_germline_variant_zip(VCFLIB_DIR, opts.base_output, variant_link, "germline", germline_sample_dict)
-            print "SUCCESSFULLY DOWNLOADED GERMLINE IR VCF"
-        except Exception,e:
-            print str(e)
-            print "FAILED TO DOWNLOAD GERMLINE IR VCF"
-            sys.exit(1)
-    else:
-        pass
-    
-    if opts.ionreporter_somatic_url_bool == True:
-        print "Remote download of SOMATIC VCF from IonReporter initiated.  Please hold..."
-        # Url encode ionreporter analysis names that have excess whitespace
-        url_encoded_ionreporter_somatic_analysis_name = urllib.quote_plus(opts.ionreporter_somatic_analysis_name)
-        try:
-            # Determine download link
-            variant_link = IR_locate_variant_zip(url_encoded_ionreporter_somatic_analysis_name, opts.ionreporter_somatic_id)
-            # Download analysis and process files
-            ionreporter_somatic_vcf_and_tsv = IR_download_somatic_variant_zip(opts.base_output, variant_link, "somatic")
-            ionreporter_somatic_unfiltered_vcf, ionreporter_somatic_tsv = (i for i in ionreporter_somatic_vcf_and_tsv)
-            opts.ionreporter_somatic_vcf = ionreporter_somatic_unfiltered_vcf
-            opts.ionreporter_somatic_tsv = ionreporter_somatic_tsv
-            print "SUCCESSFULLY DOWNLOADED SOMATIC IR VCF"
-        except Exception, e:
-            print str(e)
-            print "FAILED TO DOWNLOAD SOMATIC IR VCF"
-            sys.exit(1)
-    else:
-        pass
-
-    if opts.ionreporter_fusion_url_bool == True:
-        print "Remote download of FUSION VCF from IonReporter initiated.  Please hold..."
-        # Url encode ionreporter analysis names that have excess whitespace
-        url_encoded_ionreporter_fusion_analysis_name = urllib.quote_plus(opts.ionreporter_fusion_analysis_name)
-        try:
-            # Determine download link
-            variant_link = IR_locate_variant_zip(url_encoded_ionreporter_fusion_analysis_name, opts.ionreporter_fusion_id) 
-            # Download analysis and process files
-            IR_download_fusion_zip(variant_link, opts.base_output) 
-            print "SUCCESSFULLY DOWNLOADED FUSION IR VCF"
-        except:
-            print "FAILED TO DOWNLOAD FUSION IR VCF"
-            sys.exit(1)
-    else:
-        if opts.ionreporter_fusion_vcf is None:
-            if opts.regions == "OCP":
-                # Create pseudo fusion.vcf for OCP cases run without RNA
-                # Contains a header picked up by Downstream for insufficient RNA
-                subprocess.call("cat /home/michael/YNHH/Reference_Files/IR/fusions.v4.4.vcf > %s.ionreporter.fusions.vcf" % opts.base_output,shell=True)
-            else:
-                print "Fusion VCF is NONE - this assay did not assess gene fusions"
-                pass
+    if opts.ionreporter_skip_all is False:
+        
+        if opts.ionreporter_germline_url_bool == True:
+            print "Remote download of GERMLINE VCF from IonReporter initiated.  Please hold..."
+            url_encoded_ionreporter_germline_analysis_name = urllib.quote_plus(opts.ionreporter_germline_analysis_name)
+            try:
+                # Determine download link
+                link_and_barcodes_list = IR_locate_germline_variant_zip(url_encoded_ionreporter_germline_analysis_name, opts.ionreporter_germline_id)
+                variant_link, sample_barcode, control_barcode = (i for i in link_and_barcodes_list)
+                germline_sample_dict = {"sample": sample_barcode,
+                                        "control": control_barcode}
+                # Download analysis and process files
+                ionreporter_germline_unfiltered_vcf = IR_download_germline_variant_zip(VCFLIB_DIR, opts.base_output, variant_link, "germline", germline_sample_dict)
+                print "SUCCESSFULLY DOWNLOADED GERMLINE IR VCF"
+            except Exception,e:
+                print str(e)
+                print "FAILED TO DOWNLOAD GERMLINE IR VCF"
+                sys.exit(1)
         else:
-            print "Fusion VCF local input"
-            rename_fusion_vcf(opts.ionreporter_fusion_vcf,opts.base_output) # Rename fusions.vcf file as (basename).ionreporter.fusions.vcf
-
-    # Check for ionreporter.fusions.vcf
+            pass
+        
+        if opts.ionreporter_somatic_url_bool == True:
+            
+            
+            
+            print "Remote download of SOMATIC VCF from IonReporter initiated.  Please hold..."
+            # Url encode ionreporter analysis names that have excess whitespace
+            url_encoded_ionreporter_somatic_analysis_name = urllib.quote_plus(opts.ionreporter_somatic_analysis_name)
+            try:
+                # Determine download link
+                variant_link = IR_locate_variant_zip(url_encoded_ionreporter_somatic_analysis_name, opts.ionreporter_somatic_id)
+                # Download analysis and process files
+                ionreporter_somatic_vcf_and_tsv = IR_download_somatic_variant_zip(opts.base_output, variant_link, "somatic")
+                ionreporter_somatic_unfiltered_vcf, ionreporter_somatic_tsv = (i for i in ionreporter_somatic_vcf_and_tsv)
+                opts.ionreporter_somatic_vcf = ionreporter_somatic_unfiltered_vcf
+                opts.ionreporter_somatic_tsv = ionreporter_somatic_tsv
+                print "SUCCESSFULLY DOWNLOADED SOMATIC IR VCF"
+                
+                edit_IR_tsv_file(opts.ionreporter_version,opts.ionreporter_somatic_tsv,opts.base_output)
+                
+            except Exception, e:
+                print str(e)
+                print "FAILED TO DOWNLOAD SOMATIC IR VCF"
+                sys.exit(1)
+        else:
+            pass
     
-    ###  PROCESS FUSIONS VCF AND EXTRACT INFO ###
+        if opts.ionreporter_fusion_url_bool == True:
+            print "Remote download of FUSION VCF from IonReporter initiated.  Please hold..."
+            # Url encode ionreporter analysis names that have excess whitespace
+            url_encoded_ionreporter_fusion_analysis_name = urllib.quote_plus(opts.ionreporter_fusion_analysis_name)
+            try:
+                # Determine download link
+                variant_link = IR_locate_variant_zip(url_encoded_ionreporter_fusion_analysis_name, opts.ionreporter_fusion_id) 
+                # Download analysis and process files
+                IR_download_fusion_zip(variant_link, opts.base_output) 
+                print "SUCCESSFULLY DOWNLOADED FUSION IR VCF"
+            except:
+                print "FAILED TO DOWNLOAD FUSION IR VCF"
+                sys.exit(1)
+        else:
+            if opts.ionreporter_fusion_vcf is None:
+                if opts.regions == "OCP":
+                    # Create pseudo fusion.vcf for OCP cases run without RNA
+                    # Contains a header picked up by Downstream for insufficient RNA
+                    subprocess.call("cat /home/michael/YNHH/Reference_Files/IR/fusions.v4.4.vcf > %s.ionreporter.fusions.vcf" % opts.base_output,shell=True)
+                else:
+                    print "Fusion VCF is NONE - this assay did not assess gene fusions"
+                    pass
+            else:
+                print "Fusion VCF local input"
+                rename_fusion_vcf(opts.ionreporter_fusion_vcf,opts.base_output) # Rename fusions.vcf file as (basename).ionreporter.fusions.vcf
     
-    if os.path.isfile('./%s.ionreporter.fusions.vcf' % opts.base_output):
-        fusion_dict = extract_fusion_VCF_information('./%s.ionreporter.fusions.vcf' % opts.base_output)
-        print fusion_dict
-        # If gene expression counts exist, we will need to create a separate counts file.
-        # This file will be used for differential expression analysis
-        if fusion_dict['gene_expression_read_counts']:
-            with open('%s.gene_expression.counts.tsv') as gene_expression_out:
-                gene_expression_out.write("Gene\t%s\n" % opts.base_output)
-                for k in fusion_dict['gene_expression_read_counts'].keys():
-                    gene_expression_out.write("%s\t%s|n" % (k, fusion_dict['gene_expression_read_counts'][k]))
-
-
-    #---SELECT IONREPORTER VCF AND APPLY IR VERSION FIX IF NECESSARY---#
+        # Check for ionreporter.fusions.vcf
+        
+        ###  PROCESS FUSIONS VCF AND EXTRACT INFO ###
+        
+        if os.path.isfile('./%s.ionreporter.fusions.vcf' % opts.base_output):
+            fusion_dict = extract_fusion_VCF_information('./%s.ionreporter.fusions.vcf' % opts.base_output)
+            print fusion_dict
+            # If gene expression counts exist, we will need to create a separate counts file.
+            # This file will be used for differential expression analysis
+            if fusion_dict['gene_expression_read_counts']:
+                with open('%s.gene_expression.counts.tsv') as gene_expression_out:
+                    gene_expression_out.write("Gene\t%s\n" % opts.base_output)
+                    for k in fusion_dict['gene_expression_read_counts'].keys():
+                        gene_expression_out.write("%s\t%s|n" % (k, fusion_dict['gene_expression_read_counts'][k]))
     
-    ionreporter_somatic_unfiltered_vcf = opts.ionreporter_somatic_vcf
-    ionreporter_somatic_unfiltered_vcf = IR4_4_VCF_fix(ionreporter_somatic_unfiltered_vcf,opts.base_output)
-    # Remove the tmp IR somatic VCF
-    subprocess.call("rm %s" % opts.ionreporter_somatic_vcf, shell=True)
+    
+        #---SELECT IONREPORTER VCF AND APPLY IR VERSION FIX IF NECESSARY---#
+        
+        ionreporter_somatic_unfiltered_vcf = opts.ionreporter_somatic_vcf
+        ionreporter_somatic_unfiltered_vcf = IR4_4_VCF_fix(ionreporter_somatic_unfiltered_vcf,opts.base_output)
+        # Remove the tmp IR somatic VCF
+        subprocess.call("rm %s" % opts.ionreporter_somatic_vcf, shell=True)
     
 
     
@@ -329,14 +338,26 @@ def main():
     
     #---BREAK MULTI-ALLELIC SITES INTO ONE ALT ALLELE PER LINE---#
     
-    if opts.ionreporter_only is False:
-        vcfs_and_basenames = {"ionreporter.somatic.unfiltered" : ionreporter_somatic_unfiltered_vcf,
-                              "ionreporter.germline.unfiltered" : ionreporter_germline_unfiltered_vcf,
-                              "mutect2.somatic.unfiltered" : mutect2_unfiltered_vcf,
-                              "strelka.somatic.unfiltered" : strelka_unfiltered_vcf}
+    if opts.ionreporter_only is True:
+        vcfs_and_basenames = {"ionreporter.somatic.unfiltered" : ionreporter_somatic_unfiltered_vcf} 
+
     else:
-        vcfs_and_basenames = {"ionreporter.somatic.unfiltered" : ionreporter_somatic_unfiltered_vcf,
-                              "ionreporter.germline.unfiltered" : ionreporter_germline_unfiltered_vcf}        
+        if opts.ionreporter_skip_all is True:
+            vcfs_and_basenames = {"mutect2.somatic.unfiltered" : mutect2_unfiltered_vcf,
+                                  "strelka.somatic.unfiltered" : strelka_unfiltered_vcf}
+        else:
+            vcfs_and_basenames = {"ionreporter.somatic.unfiltered" : ionreporter_somatic_unfiltered_vcf,
+                                  "mutect2.somatic.unfiltered" : mutect2_unfiltered_vcf,
+                                  "strelka.somatic.unfiltered" : strelka_unfiltered_vcf}
+    
+    if opts.ionreporter_germline_url_bool is True:
+        vcfs_and_basenames.update({"ionreporter.germline.unfiltered" : ionreporter_germline_unfiltered_vcf})
+    
+    # If user chooses not to use IR, remove it from the list of VCFs to process
+    if opts.ionreporter_skip_all is True:
+        for k in vcfs_and_basenames.keys():
+            if re.search("ionreporter", k):
+                vcfs_and_basenames.pop(k)
     
     for description,vcf in vcfs_and_basenames.iteritems():
         if description == "ionreporter.somatic.unfiltered":
@@ -353,82 +374,128 @@ def main():
             
 
     ### PERFORM HARD-FILTERING AND VEP ANNOTATION
-    
-    program_filter_vcf_list = [
-                               # first index = output basename suffix
-                               # second index = SnpSift filter expression
-                               # third index = vcf input
-
-                                ["ionreporter.loh",
-                                 """(HRUN[*] <= 6)
-                                     & ((FDP[*] >= 20) | (DP[*] >= 20))
-                                     & ((FAO[*] >= 2) | (AO[*] >= 2)) 
-                                     & ((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5))
-                                     & ( ((GEN[0].AF[*] >= 0.65) & (GEN[1].AF[*] <= 0.65)) | (isHom(GEN[0]) & isHet(GEN[1])) )
-                                     & !(ALT='<CNV>')""", 
-                                 ionreporter_germline_unfiltered_vcf],
-
-                               ["ionreporter.somatic",
-                                """(HRUN[*] <= 6)
-                                & ((FDP[*] >= 20) | (DP[*] >= 20))
-                                & ((FAO[*] >= 2) | (AO[*] >= 2)) 
-                                & ((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5)) 
-                                & !(ALT='<CNV>')""", 
-                                ionreporter_somatic_unfiltered_vcf],
-
-                                ["ionreporter.germline",
-                                """(HRUN[*] <= 6)
-                                & ((GEN[0].AF[*] >= 0.30) & (GEN[1].AF[*] >= 0.30))
-                                & ((FDP[*] >= 20) | (DP[*] >= 20))
-                                & ((FAO[*] >= 2) | (AO[*] >= 2)) 
-                                & ((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5)) 
-                                & !(ALT='<CNV>')""", 
-                                ionreporter_germline_unfiltered_vcf],
-                       
-                                ["ionreporter.cnv",
-                                "(ALT='<CNV>')",
-                                ionreporter_somatic_unfiltered_vcf]
-                            
-                                ]
-    
-    if opts.ionreporter_only is False:
-        program_filter_vcf_list = program_filter_vcf_list + [
+    program_filter_vcf_list = []
+    if opts.ionreporter_skip_all is False:
+        program_filter_vcf_list = [
                                    # first index = output basename suffix
                                    # second index = SnpSift filter expression
                                    # third index = vcf input
-
-    #                                 ["varscan",  
-    #                                  """
-    #                                     ((SS ='1') | (SS = '2') | (SS= '3') )  
-    #                                      & ( (GEN[0].DP[*] >= 5) & (GEN[1].DP[*] >= 20))""",
-    #                                      #& !(exists INDEL)""", # filter out INDELs
-    #                                  varscan_vcf],
-    #                                    
-
+    
+                                   ["ionreporter.somatic",
+                                    """(HRUN[*] <= 6)
+                                    & ((FDP[*] >= 20) | (DP[*] >= 20))
+                                    & ((FAO[*] >= 2) | (AO[*] >= 2)) 
+                                    & ((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5)) 
+                                    & !(ALT='<CNV>')""", 
+                                    ionreporter_somatic_unfiltered_vcf],
+    
                            
-    #                                 ["mutect.somatic",
-    #                                  """(GEN[1].FA <= 0.05) 
-    #                                      & (GEN[0].FA >= 0.05) 
-    #                                      & (GEN[1].DP >= 5) 
-    #                                      & (GEN[0].DP >= 20)""",
-    #                                      #& (FILTER = 'PASS')""",
-    #                                  mutect_vcf],
+                                    ["ionreporter.cnv",
+                                    "(ALT='<CNV>')",
+                                    ionreporter_somatic_unfiltered_vcf]
+                                
+                                    ]
+    
+    if opts.ionreporter_only is False:
+        if re.search("Population", opts.normal, re.IGNORECASE):
+            program_filter_vcf_list = program_filter_vcf_list + [
+                                       # first index = output basename suffix
+                                       # second index = SnpSift filter expression
+                                       # third index = vcf input
+    
+        #                                 ["varscan",  
+        #                                  """
+        #                                     ((SS ='1') | (SS = '2') | (SS= '3') )  
+        #                                      & ( (GEN[0].DP[*] >= 5) & (GEN[1].DP[*] >= 20))""",
+        #                                      #& !(exists INDEL)""", # filter out INDELs
+        #                                  varscan_vcf],
+        #                                    
+    
+                               
+        #                                 ["mutect.somatic",
+        #                                  """(GEN[1].FA <= 0.05) 
+        #                                      & (GEN[0].FA >= 0.05) 
+        #                                      & (GEN[1].DP >= 5) 
+        #                                      & (GEN[0].DP >= 20)""",
+        #                                      #& (FILTER = 'PASS')""",
+        #                                  mutect_vcf],
+                                       
+                                        ["mutect2.somatic",
+                                         """((GEN[0].AF >= 0.05) 
+                                             & (GEN[0].AD[1] >= 2))
+                                             | (FILTER = 'PASS')""",
+                                        mutect2_unfiltered_vcf],
+         
+                                        ["strelka.somatic",
+                                         """(GEN[0].DP[*] >= 5)
+                                             & (GEN[1].DP[*] >= 20)
+                                             & (SGT !~ 'ref->ref')""",
+                                         strelka_unfiltered_vcf]
+                                       
+                                       ]
+        else:
+            program_filter_vcf_list = program_filter_vcf_list + [
+                                           # first index = output basename suffix
+                                           # second index = SnpSift filter expression
+                                           # third index = vcf input
+        
+            #                                 ["varscan",  
+            #                                  """
+            #                                     ((SS ='1') | (SS = '2') | (SS= '3') )  
+            #                                      & ( (GEN[0].DP[*] >= 5) & (GEN[1].DP[*] >= 20))""",
+            #                                      #& !(exists INDEL)""", # filter out INDELs
+            #                                  varscan_vcf],
+            #                                    
+        
                                    
-                                    ["mutect2.somatic",
-                                     """((GEN[1].AF <= 0.05) 
-                                         & (GEN[0].AF >= 0.1) 
-                                         & (GEN[1].AD[0] >= 5) 
-                                         & (GEN[0].AD[1] >= 2))
-                                         | (FILTER = 'PASS')""",
-                                    mutect2_unfiltered_vcf],
-     
-                                    ["strelka.somatic",
-                                     """(GEN[0].DP[*] >= 5)
-                                         & (GEN[1].DP[*] >= 20)
-                                         & (SGT !~ 'ref->ref')""",
-                                     strelka_unfiltered_vcf]
-                                   
-                                   ]
+            #                                 ["mutect.somatic",
+            #                                  """(GEN[1].FA <= 0.05) 
+            #                                      & (GEN[0].FA >= 0.05) 
+            #                                      & (GEN[1].DP >= 5) 
+            #                                      & (GEN[0].DP >= 20)""",
+            #                                      #& (FILTER = 'PASS')""",
+            #                                  mutect_vcf],
+                                           
+                                            ["mutect2.somatic",
+                                             """((GEN[1].AF <= 0.05) 
+                                                 & (GEN[0].AF >= 0.05) 
+                                                 & (GEN[1].AD[0] >= 5) 
+                                                 & (GEN[0].AD[1] >= 2))
+                                                 | (FILTER = 'PASS')""",
+                                            mutect2_unfiltered_vcf],
+             
+                                            ["strelka.somatic",
+                                             """(GEN[0].DP[*] >= 5)
+                                                 & (GEN[1].DP[*] >= 20)
+                                                 & (SGT !~ 'ref->ref')""",
+                                             strelka_unfiltered_vcf]
+                                           
+                                           ]
+
+    if opts.ionreporter_germline_url_bool is True:
+        program_filter_vcf_list.append(
+                                       ["ionreporter.loh",
+                                         """(HRUN[*] <= 6)
+                                             & ((FDP[*] >= 20) | (DP[*] >= 20))
+                                             & ((FAO[*] >= 2) | (AO[*] >= 2)) 
+                                             & ((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5))
+                                             & ( ((GEN[0].AF[*] >= 0.65) & (GEN[1].AF[*] <= 0.65)) | (isHom(GEN[0]) & isHet(GEN[1])) )
+                                             & !(ALT='<CNV>')""", 
+                                         ionreporter_germline_unfiltered_vcf]
+                                       )
+        
+        program_filter_vcf_list.append(
+                                        ["ionreporter.germline",
+                                        """(HRUN[*] <= 6)
+                                        & ((GEN[0].AF[*] >= 0.30) & (GEN[1].AF[*] >= 0.30))
+                                        & ((FDP[*] >= 20) | (DP[*] >= 20))
+                                        & ((FAO[*] >= 2) | (AO[*] >= 2)) 
+                                        & ((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5)) 
+                                        & !(ALT='<CNV>')""", 
+                                        ionreporter_germline_unfiltered_vcf]
+                                       )
+        
+
 
 
     # Delete the VEP index (i.e. force it to create a new index), so that if multiple VEP versions exist, there are no issues with the HGVS nomenclature module
@@ -436,32 +503,35 @@ def main():
     # Loop over program,filter,vcf list and apply filters and annotations
     for group in program_filter_vcf_list:
         program,filter,vcf = (i for i in group)
-        if determine_num_variants_in_vcf(vcf) < 1:
-            # If no variants in VCF, create blank $program.json and pass
-            print "WARNING: No variants detected in %s. \nWARNING: Final output will not have calls made by %s.  Please check error logs." % (vcf, program)        
-            subprocess.call("touch %s.%s.json" % (opts.base_output, program),shell=True)
-            pass
+        if os.stat(vcf).st_size == 0:
+            print "WARNING: %s is empty.  Passing..." % program
         else:
-            # Apply filters via SnpSift
-            filtered_vcf = SnpSift_filter(vcf,SNPSIFT_EXE,BEDTOOLS_EXE, filter, opts.base_output, program, opts.do_not_separate_LOH)
-            
-            # ionreporter.cnv.vcf needs to be handled via unfiltered method or will cause memory issues
-            if program == "ionreporter.cnv":  
-                pass        # for now, pass this because long CNVs add lengthy processing time by VEP
-                #VEP_command_unfiltered(VEP_EXE,VEP_REF_FASTA,opts.base_output,program)
+            if determine_num_variants_in_vcf(vcf) < 1:
+                # If no variants in VCF, create blank $program.json and pass
+                print "WARNING: No variants detected in %s. \nWARNING: Final output will not have calls made by %s.  Please check error logs." % (vcf, program)        
+                subprocess.call("touch %s.%s.json" % (opts.base_output, program),shell=True)
+                pass
             else:
-                if opts.filter_disabled is False:  
-                    print "WARNING: Running consequential filters.  Only nonsynonymous coding variants will be reported!"  
-                    VEP_command_filtered(VEP_EXE,VEP_REF_FASTA,opts.base_output,program, filtered_vcf)
+                # Apply filters via SnpSift
+                filtered_vcf = SnpSift_filter(vcf,SNPSIFT_EXE,BEDTOOLS_EXE, filter, opts.base_output, program, opts.do_not_separate_LOH)
+                
+                # ionreporter.cnv.vcf needs to be handled via unfiltered method or will cause memory issues
+                if program == "ionreporter.cnv":  
+                    pass        # for now, pass this because long CNVs add lengthy processing time by VEP
+                    #VEP_command_unfiltered(VEP_EXE,VEP_REF_FASTA,opts.base_output,program)
                 else:
-                    VEP_command_unfiltered(VEP_EXE,VEP_REF_FASTA,opts.base_output,program, filtered_vcf)
+                    if opts.filter_disabled is False:  
+                        print "WARNING: Running consequential filters.  Only nonsynonymous coding variants will be reported!"  
+                        VEP_command_filtered(VEP_EXE,VEP_REF_FASTA,opts.base_output,program, filtered_vcf)
+                    else:
+                        VEP_command_unfiltered(VEP_EXE,VEP_REF_FASTA,opts.base_output,program, filtered_vcf)
 
 
     #-------------------------------------------------------------------------------------------
     #---------------------------------FINAL POST-PROCESSING-------------------------------------
     #-------------------------------------------------------------------------------------------
     
-    edit_IR_tsv_file(opts.ionreporter_version,opts.ionreporter_somatic_tsv,opts.base_output)
+    
     
     extra_file_cleanup()
     

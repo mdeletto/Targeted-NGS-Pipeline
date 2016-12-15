@@ -16,6 +16,7 @@ import shutil
 import openpyxl
 import string
 from openpyxl.reader.excel import load_workbook
+from subprocess import CalledProcessError
 
 
 def mkdir_p(path):
@@ -181,7 +182,10 @@ def move_files_to_new_subdirectory(tumor_bam, normal_bam, base_output,galaxy_fla
             subprocess.call('mv %s*temp* %s/tmp/ 2>> /tmp/error' % (base_output,base_output),shell=True)           
 
             mkdir_p("%s/%s/BAMs" %(os.getcwd(),base_output))
-            subprocess.call('mv %s* %s* %s/BAMs/ 2>> /tmp/error' % (tumor_bam, normal_bam, base_output),shell=True)
+            if re.search("Population", normal_bam, re.IGNORECASE):
+                subprocess.call('mv %s* %s/BAMs/ 2>> /tmp/error' % (tumor_bam, base_output),shell=True)
+            else:
+                subprocess.call('mv %s* %s* %s/BAMs/ 2>> /tmp/error' % (tumor_bam, normal_bam, base_output),shell=True)
         subprocess.call('mv %s* %s/ 2>> /tmp/error' % (base_output,base_output),shell=True)
     except:
         print "ERROR: Failed to move files"
@@ -497,16 +501,24 @@ def muTect_caller_command(MUTECT_EXE,REGIONS_FILE,MUTECT_V1_PON,dbsnp_vcf,cosmic
 
 def muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_V1_PON,dbsnp_vcf,cosmic_vcf,REF_FASTA,normal_bam,tumor_bam,base_output):
     try:
-        mutect2_command = "java -jar %s --analysis_type MuTect2 --reference_sequence %s -L %s --normal_panel %s --cosmic %s --dbsnp %s --input_file:normal %s --input_file:tumor %s -o %s.mutect2.somatic.unfiltered.vcf --max_alt_allele_in_normal_fraction 0.1 -nct 8 --minPruning 10 --kmerSize 60" % (GATK_LATEST_EXE,REF_FASTA,REGIONS_FILE,MUTECT2_V1_PON,cosmic_vcf,dbsnp_vcf,normal_bam,tumor_bam,base_output)
         print """#--------------------MUTECT2 SOMATIC CALLING--------------------#"""
+        if re.search("Population", normal_bam, re.IGNORECASE):
+            print "RUNNING MUTECT2 IN TUMOR-ONLY MODE"
+            #mutect2_command = "java -jar %s --analysis_type MuTect2 --reference_sequence %s -L %s --normal_panel %s --cosmic %s --dbsnp %s --input_file:tumor %s -o %s.mutect2.somatic.unfiltered.vcf --max_alt_allele_in_normal_fraction 0.1 -nct 8 --minPruning 10 --kmerSize 60" % (GATK_LATEST_EXE,REF_FASTA,REGIONS_FILE,MUTECT2_V1_PON,cosmic_vcf,dbsnp_vcf,tumor_bam,base_output)
+            mutect2_command = "java -jar %s --analysis_type MuTect2 --reference_sequence %s -L %s --normal_panel %s --cosmic %s --dbsnp %s --input_file:tumor %s -o %s.mutect2.somatic.unfiltered.vcf -nct 8 --minPruning 10 --kmerSize 60" % (GATK_LATEST_EXE,REF_FASTA,REGIONS_FILE,MUTECT2_V1_PON,cosmic_vcf,dbsnp_vcf,tumor_bam,base_output)
+
+        else:
+            mutect2_command = "java -jar %s --analysis_type MuTect2 --reference_sequence %s -L %s --normal_panel %s --cosmic %s --dbsnp %s --input_file:normal %s --input_file:tumor %s -o %s.mutect2.somatic.unfiltered.vcf --max_alt_allele_in_normal_fraction 0.1 -nct 8 --minPruning 10 --kmerSize 60" % (GATK_LATEST_EXE,REF_FASTA,REGIONS_FILE,MUTECT2_V1_PON,cosmic_vcf,dbsnp_vcf,normal_bam,tumor_bam,base_output)
+
         print "MUTECT2 SOMATIC CALLING COMMAND:", mutect2_command
         log = open('%s.mutect2.log' % base_output, 'w')
         subprocess.call(mutect2_command,shell=True, stdout=log, stderr=log)
         log.close()
-        
+
         return "%s.mutect2.somatic.unfiltered.vcf" % base_output
-    except:
-        print "ERROR: MuTect failed"
+    except Exception, e:
+        print "ERROR: MuTect2 failed"
+        print "ERROR" + str(e)
 
 def GATK_snp_caller_command(GATK_EXE,tumor_bam,normal_bam,base_output,REF_FASTA,dbsnp_vcf):
     try:
@@ -548,7 +560,15 @@ def extra_file_cleanup():
 
 def determine_num_variants_in_vcf(vcf):
     """This is a quick and dirty way to count variants in a VCF (does not account for multi-allelic sites)"""
-    num_variants = subprocess.check_output("grep -vc '^#' %s" % vcf,shell=True)
+    try:
+        num_variants = subprocess.check_output("grep -vc '^#' %s" % vcf,shell=True)
+        num_variants = num_variants.strip("\n")
+    except CalledProcessError as e:
+        if int(e.output.strip("\n")) > 1:
+            raise
+        else:
+            num_variants = 0
+
     return num_variants
 
 def sample_attribute_autodetection(basename, pipeline_version, panel):
@@ -569,8 +589,8 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
     
     def check_if_tpl_spreadsheet_exists():
         """Checks if TPL spreadsheet is mounted and exists."""
-        if os.path.isfile("/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/2016 TP stats.xlsx"):
-            return "/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/2016 TP stats.xlsx"
+        if os.path.isfile("/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/Tumor Profiling Stats 2016.xlsx"):
+            return "/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/Tumor Profiling Stats 2016.xlsx"
         else:
             print "WARNING: Could not find the TP spreadsheet.  Attempting to troubleshoot the error..."
             if os.path.isdir("/media/Tumor_Profiling_N_Drive/"):
