@@ -813,8 +813,11 @@ def main():
                             transcript_sheet.cell(row=row_counter, column=column_counter).font = global_font
                             
                             # Special handling for select columns
-                            if k == "variant id":
-                                master_coordinate_dict[print_dict['variant id']]['transcripts.variant id'] = transcript_sheet.cell(row=row_counter, column=column_counter).coordinate
+                            try:
+                                if k == "variant id":
+                                    master_coordinate_dict[print_dict['variant id']]['transcripts.variant id'] = transcript_sheet.cell(row=row_counter, column=column_counter).coordinate
+                            except KeyError:
+                                print print_dict[k]
                             
                             column_counter += 1
                         row_counter += 1
@@ -1206,10 +1209,13 @@ def main():
                         summary_sheet_colocated_link = summary_sheet.cell(column=39, row=row_counter)
                         
                         # Link from summary sheet to transcript sheet
-                        if summary_sheet_transcript_link.value in master_coordinate_dict.keys():                    
+                        if summary_sheet_transcript_link.value in master_coordinate_dict.keys():
+                            try:                   
                             #transcript_sheet_variant_id.hyperlink = "#summary!%s" % master_coordinate_dict[transcript_sheet_variant_id.value]['summary.transcript link']
-                            summary_sheet_transcript_link.value = '=HYPERLINK("#transcripts!%s", "%s")' % (master_coordinate_dict[summary_sheet_transcript_link.value]['transcripts.variant id'], summary_sheet_transcript_link.value)
-                            summary_sheet_transcript_link.font = Font(color=BLUE, name="Arial", size=10)
+                                summary_sheet_transcript_link.value = '=HYPERLINK("#transcripts!%s", "%s")' % (master_coordinate_dict[summary_sheet_transcript_link.value]['transcripts.variant id'], summary_sheet_transcript_link.value)
+                                summary_sheet_transcript_link.font = Font(color=BLUE, name="Arial", size=10)
+                            except KeyError:
+                                pass
                         
                         # Link from summary sheet to colocated sheet
                         if summary_sheet_colocated_link.value in master_coordinate_dict.keys():                    

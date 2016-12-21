@@ -329,7 +329,7 @@ def determine_IR_basename_filepath(analysis_name,ionreporter_id,IR_url,authoriza
         print "ERROR: Unable to process IonReporter links.  Is this a valid analysis name?  Aborting..."
         return 0
 
-def ssh_cmd(current_host, command, sm_username=sm_username, sm_key=sm_key, sm_port=sm_port, print_stdout=True):
+def ssh_cmd(current_host, command, sm_username, sm_key, sm_port, print_stdout):
     # make sure command ends in a new line
     if not command.endswith('\n'):
         command = command+'\n'
@@ -420,7 +420,6 @@ def connect_to_IR_server_and_run_command(remote_command):
     #return stdout
     
     timeout = 60
-    import time
     endtime = time.time() + timeout
     while not stderr.channel.eof_received:
         time.sleep(1)
@@ -428,19 +427,9 @@ def connect_to_IR_server_and_run_command(remote_command):
             stderr.channel.close()
             break
     
-    try:
-        print "reading stderr"
-        stderr.readlines()
-        print "read stderr"
-    except:
-        print "FAIL could not read stderr"
-    
     if stderr.read() == "":
-        print "returning something"
         return stdout
     else:
-        print "returning something - with stderr"
-        print stderr.read()
         return stdout
         #sys.exit("ERROR: Failed to execute ssh command: %s\nERROR: %s" % (remote_command, stderr))
 
@@ -541,7 +530,7 @@ def run_pipeline():
         
         # For QC samples, we don't want any calls to be filtered based on consequence
         if re.search("QC", key) or re.search("TFNA", key):
-            command += " --disable_filtering=True"
+            command += " --disable_filtering"
      
         command = " ".join(command.split())
         print command
@@ -612,13 +601,10 @@ for name in names:
                     somatic_base_filepath = determine_IR_basename_filepath(analysis['name'], analysis['id'], opts.url, IR_API_KEY)
                     trash, dirpath = somatic_base_filepath.split("filepath=")
                     dirpath = "/".join(dirpath.split("/")[:-1])
-                    print datetime.datetime.now()
                     remote_command_output = connect_to_IR_server_and_run_command("grep '##mapd' %s/outputs/AnnotatorActor-00/annotated_variants.vcf" % dirpath)
-                    print datetime.datetime.now()
                     match = re.search("##mapd=(.*)", remote_command_output.read().strip())
                     mapd = round(float(match.group(1)), 3)
                     qc_dict['mapd'] = mapd
-                    print qc_dict
                     # Handle repeat analyses by choosing a repeat analysis if it exists.
                     if re.search("repeat", analysis['name'], re.IGNORECASE):
                         repeat_flag = True

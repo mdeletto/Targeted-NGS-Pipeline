@@ -88,6 +88,7 @@ def VEP_command_unfiltered(VEP,REF_FASTA,base_output,program, vcf_in):
     except:
         print "ERROR: Could not initiate annotation on VCF file"
 
+
 def VEP_command_filtered(VEP,REF_FASTA,base_output,program,vcf_in):
     try:
         def VEP_json_consequence_filtering(VEP_json_command_output,base_output,program):
