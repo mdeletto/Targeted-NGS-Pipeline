@@ -20,7 +20,6 @@ import time
 import MySQLdb
 from collections import defaultdict
 from elasticsearch import Elasticsearch
-from web.utils import dateify
 
 os.chdir("/home/michael/Cases/Clinical/Pending")
 
@@ -38,6 +37,9 @@ group.add_option("--analysis_date","-d", help="Pull IR analyses from this date. 
 group.add_option("--days", help="Number of days to look back at for IR analyses.  Default is to use all IR analyses.  However, by reducing the number of days, runtime will be faster.",dest='days',action='store',default=None)
 group.add_option("--download_bams_only","", help="Pull tumor and normal bams for a given analysis and quit",dest='bams_only',action='store_true',default=False)
 group.add_option("--pipeline_version","-p", help="Pipeline version to use.  Default is to use the latest pipeline (%default)",dest='pipeline_version',action='store',default="1.2.1")#datetime.date.today())
+group.add_option("--additional-pipeline-arguments", help="Arguments to pass to the pipeline for additional control over the pipeline.",dest='pipeline_arguments',action='store',default=None)#datetime.date.today())
+group.add_option("--force","-f", help="Force unsupported panels through the pipeline anyway.  NOT RECOMMENDED.",dest='force',action='store_true',default=False)
+group.add_option("--skip-es-submit", help="Skip submitting the case ID to ElasticSearch.  Default=[%default]",dest='skip_es_submit',action='store_true',default=False)
 group.add_option("-v", help="verbose <[%default]>", dest='verbose',action='store_true',default=False)
 parser.add_option_group(group)
 
@@ -231,41 +233,53 @@ def download_bams_from_IR(IR_download_link,IR_download_dir,workflow_dict_key):
 
     # Download BAMs
     print "DOWNLOADING BAMS..."
+    
     for sample_type,nested_list in bams_to_download.iteritems():
-        sample_definition_file, bam_link = (i for i in nested_list)
-        proc = subprocess.check_output("""curl -s -O -k -H "Authorization:%s" "%s" 2> /dev/null && unzip -o %s """ % (IR_API_KEY,bam_link,sample_definition_file),shell=True)
-        direct_bam_filepaths = subprocess.check_output("""awk '{print $NF}' %s/%s""" % (os.getcwd(),sample_definition_file),shell=True)
-        num_lines = sum(1 for line in open('%s/%s' %(os.getcwd(),sample_definition_file)))
-        bam_barcode_paths_and_ids = {}
-        direct_bam_filepaths = direct_bam_filepaths.strip().split("\n")
-        for direct_bam_filepath in direct_bam_filepaths:
-            bam_barcode_id = direct_bam_filepath.split("/")
-            bam_barcode_id = bam_barcode_id[-1]
-            bam_barcode_paths_and_ids[direct_bam_filepath] = bam_barcode_id
-            #direct_bam_link = IR_download_link + direct_bam_filepath
-
-        # If multiple BAMs exist in sample definition .rrs file
-        if num_lines > 1 and len(bam_barcode_paths_and_ids.keys()) == 2:
+        if not os.path.isfile("%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)) and not os.path.isfile("%s/%s-%s.bam" % (os.getcwd(),sample_name,sample_type)):
+            sample_definition_file, bam_link = (i for i in nested_list)
+            proc = subprocess.check_output("""curl -s -O -k -H "Authorization:%s" "%s" 2> /dev/null && unzip -o %s """ % (IR_API_KEY,bam_link,sample_definition_file),shell=True)
+            direct_bam_filepaths = subprocess.check_output("""awk '{print $NF}' %s/%s""" % (os.getcwd(),sample_definition_file),shell=True)
+            num_lines = sum(1 for line in open('%s/%s' %(os.getcwd(),sample_definition_file)))
+            bam_barcode_paths_and_ids = {}
+            direct_bam_filepaths = direct_bam_filepaths.strip().split("\n")
+            for direct_bam_filepath in direct_bam_filepaths:
+                bam_barcode_id = direct_bam_filepath.split("/")
+                bam_barcode_id = bam_barcode_id[-1]
+                bam_barcode_paths_and_ids[direct_bam_filepath] = bam_barcode_id
+                #direct_bam_link = IR_download_link + direct_bam_filepath
+    
+            # If multiple BAMs exist in sample definition .rrs file
+            if num_lines > 1 and len(bam_barcode_paths_and_ids.keys()) == 2:
+                bam_pipeline_flags['merged_bams'] = True
+                counter = 1
+                for direct_bam_filepath, bam_barcode_id in bam_barcode_paths_and_ids.iteritems():
+                    local_bam_filepath_name = execute_scp_bam_copy(direct_bam_filepath, bam_barcode_id)
+                    shutil.move('%s/%s' % (os.getcwd(),bam_barcode_id), '%s/%s-%s-%s.bam' % (os.getcwd(),sample_name,sample_type,str(counter)))
+                    counter += 1
+                subprocess.call("/home/michael/bin/samtools-1.1/samtools merge -f %s/%s-%s-merged.bam %s/%s-%s-%s.bam %s/%s-%s-%s.bam" % (os.getcwd(),sample_name,sample_type,os.getcwd(),sample_name,sample_type,str(1),os.getcwd(),sample_name,sample_type,str(2)),shell=True)
+                subprocess.call("rm -rf %s/%s-%s-%s.bam %s/%s-%s-%s.bam" % (os.getcwd(),sample_name,sample_type,str(1),os.getcwd(),sample_name,sample_type,str(2)), shell=True)
+                #pysam.index("%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type))
+                bam_pipeline_flags['%s_bam_name' %(sample_type)] = "%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)
+                bam_pipeline_flags['%s_bam_path' % (sample_type)] = "%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)
+            # If single BAM exists in sample definition .rrs file
+            else:
+                bam_pipeline_flags['merged_bams'] = False
+                for direct_bam_filepath, bam_barcode_id in bam_barcode_paths_and_ids.iteritems():
+                    local_bam_filepath_name = execute_scp_bam_copy(direct_bam_filepath, bam_barcode_id)
+                    shutil.move('%s/%s' % (os.getcwd(),bam_barcode_id),'%s/%s-%s.bam' % (os.getcwd(),sample_name,sample_type))
+                #pysam.index("%s/%s-%s.bam" % (os.getcwd(),sample_name,sample_type))
+                bam_pipeline_flags['%s_barcode' % sample_type] = local_bam_filepath_name  
+                bam_pipeline_flags['%s_bam_path' % (sample_type)] = "%s/%s-%s.bam" % (os.getcwd(),sample_name,sample_type)
+                bam_pipeline_flags['%s_bam_name' % (sample_type)] = "%s-%s.bam" % (sample_name,sample_type)
+        elif os.path.isfile("%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)):
             bam_pipeline_flags['merged_bams'] = True
-            counter = 1
-            for direct_bam_filepath, bam_barcode_id in bam_barcode_paths_and_ids.iteritems():
-                local_bam_filepath_name = execute_scp_bam_copy(direct_bam_filepath, bam_barcode_id)
-                shutil.move('%s/%s' % (os.getcwd(),bam_barcode_id), '%s/%s-%s-%s.bam' % (os.getcwd(),sample_name,sample_type,str(counter)))
-                counter += 1
-            subprocess.call("/home/michael/bin/samtools-1.1/samtools merge -f %s/%s-%s-merged.bam %s/%s-%s-%s.bam %s/%s-%s-%s.bam" % (os.getcwd(),sample_name,sample_type,os.getcwd(),sample_name,sample_type,str(1),os.getcwd(),sample_name,sample_type,str(2)),shell=True)
-            subprocess.call("rm -rf %s/%s-%s-%s.bam %s/%s-%s-%s.bam" % (os.getcwd(),sample_name,sample_type,str(1),os.getcwd(),sample_name,sample_type,str(2)), shell=True)
-            #pysam.index("%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type))
             bam_pipeline_flags['%s_bam_name' %(sample_type)] = "%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)
-        # If single BAM exists in sample definition .rrs file
-        else:
+            bam_pipeline_flags['%s_bam_path' % (sample_type)] = "%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)
+        elif os.path.isfile("%s/%s-%s.bam" % (os.getcwd(),sample_name,sample_type)):
             bam_pipeline_flags['merged_bams'] = False
-            for direct_bam_filepath, bam_barcode_id in bam_barcode_paths_and_ids.iteritems():
-                local_bam_filepath_name = execute_scp_bam_copy(direct_bam_filepath, bam_barcode_id)
-                shutil.move('%s/%s' % (os.getcwd(),bam_barcode_id),'%s/%s-%s.bam' % (os.getcwd(),sample_name,sample_type))
-            #pysam.index("%s/%s-%s.bam" % (os.getcwd(),sample_name,sample_type))
             bam_pipeline_flags['%s_bam_path' % (sample_type)] = "%s/%s-%s.bam" % (os.getcwd(),sample_name,sample_type)
             bam_pipeline_flags['%s_bam_name' % (sample_type)] = "%s-%s.bam" % (sample_name,sample_type)
-            bam_pipeline_flags['%s_barcode' % sample_type] = local_bam_filepath_name
+            
 
     return bam_pipeline_flags
 
@@ -311,7 +325,6 @@ def determine_IR_basename_filepath(analysis_name,ionreporter_id,IR_url,authoriza
         else:
             proc = subprocess.Popen(["""curl -k -H "Authorization:%s" "https://%s/webservices_42/rest/api/analysis?format=json&id=%s" 2> /dev/null""" % (authorization_key,IR_url,ionreporter_id)],shell=True,stdout=subprocess.PIPE)
         output, err = proc.communicate()
-        print output
     except:
         print "ERROR: Unable to communicate with server.  Check Authorization key, server address, and your network connectivity."
         sys.exit(1)
@@ -461,6 +474,104 @@ def perform_qc_check(workflow_dict):
 
     return workflow_dict
 
+def connect_to_mysql_and_load_qc_dict(sample_name):
+    """Connect to database, choose sequencing runs that have sampleNames that match IR sampleNames, but limit sequencing runs to the most recent.
+    Then perform a QC check on the IR analysis metrics, and updat the database entry.
+    """
+    
+    cnx = connect_to_database("tumor_profiling_lab")
+    cursor = cnx.cursor()
+    
+    # Limit 10, and Order by most recent lastModified
+    sql = "SELECT resultName, runStatus, runErrorNotes FROM targetedNGSRunQualityControlMetrics \
+            WHERE sampleName LIKE '%s' \
+            ORDER BY lastModified DESC LIMIT 10" % sample_name
+    
+    try:
+        # Execute the SQL command
+        cursor.execute(sql)
+        # Fetch all the rows in a list of lists.
+        results = cursor.fetchall()
+        if len(results) > 0:
+            row_counter = 0
+            for row in results:
+                row_counter += 1
+                if row_counter > 1:
+                    break
+                else:
+                    resultName = row[0]
+                    runStatus = row[1]
+                    runErrorNotes = row[2]
+                    
+            # Prepare values for MySQL update
+            qc_dict = defaultdict(lambda: None, workflow_dict[sample_name]['qc'])
+            
+            if runErrorNotes is None or runErrorNotes == "":
+               runErrorNotes = "" 
+            
+            if 'mapd' in workflow_dict[sample_name]['qc'] and not re.search("Population", workflow_dict[sample_name]['somatic_analysis']['somatic_normal_name']):
+                print "OK: CNV Assessment detected for %s" % sample_name
+                qc_dict['cnvAssessment'] = 1
+                if float(workflow_dict[sample_name]['qc']['mapd']) >= 0.9:
+                    runStatus = 'FAIL'
+                    runErrorNotes += 'MAPD Score >= 0.9; '
+            else:
+                qc_dict['cnvAssessment'] = 0
+                    
+            if 'totalMappedFusionPanelReads' in workflow_dict[sample_name]['qc'] and re.search("Oncomine", workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']):
+                print "OK: FUSION Assessment detected for %s" % sample_name
+                qc_dict['geneFusionAssessment'] = 1
+                if int(workflow_dict[sample_name]['qc']['totalMappedFusionPanelReads']) < 20000:
+                    runStatus = 'FAIL'
+                    runErrorNotes += 'totalMappedFusionPanelReads < 20,0000; '
+                if int(workflow_dict[sample_name]['qc']['expr_control_sum']) < 20000:
+                    runStatus = 'FAIL'
+                    runErrorNotes += 'sumRNAControls < 20,0000; '
+            else:
+                qc_dict['geneFusionAssessment'] = 0
+        
+            # Add "FAIL" prefix to the comment, unless it already exists
+            if runErrorNotes != "":
+                if re.search("FAIL", runErrorNotes, re.IGNORECASE) or re.search("FLAG", runErrorNotes, re.IGNORECASE):
+                    pass
+                else:
+                    runErrorNotes = "FAIL:" + runErrorNotes
+        
+            # PERFORM THE MYSQL DATABASE UPDATE FOR THE ANALYSIS
+            print "MAPD = %s" % qc_dict['mapd']
+        
+            sql = "UPDATE targetedNGSRunQualityControlMetrics SET geneFusionAssessment = '%s', sumRNAControls = '%s', cnvAssessment = '%s', mapdScore = '%s', runStatus = '%s', runErrorNotes = '%s', modifier = 'AUTO', lastModified = '%s' \
+                    WHERE resultName = '%s' AND sampleName = '%s'" % (qc_dict['geneFusionAssessment'],
+                                                                      qc_dict['expr_control_sum'],
+                                                                      qc_dict['cnvAssessment'],
+                                                                      qc_dict['mapd'],
+                                                                      runStatus,
+                                                                      runErrorNotes,
+                                                                      datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                                                      resultName,
+                                                                      sample_name
+                                                                      )
+          
+            try:
+                # Execute the SQL command
+                cursor.execute(sql)
+                # Commit changes
+                cnx.commit()
+            except Exception, e:
+                print "ERROR: Could not update database for %s" % sample_name
+                print str(e)
+                cnx.rollback()
+            
+            cnx.close()
+
+        else:
+            print "WARNING: No matching entries were found in the table for %s" % sample_name
+    except Exception, e:
+        print "ERRROR: Unable to query database."
+        print "ERRROR: %s" % str(e)
+    
+
+
 def run_pipeline():
     
     sample_name = key
@@ -529,8 +640,11 @@ def run_pipeline():
                       workflow_dict[key]['normal_bam_name'], workflow_dict[key]['somatic_analysis']['somatic_analysis_name'], workflow_dict[key]['somatic_analysis']['somatic_analysis_id'], fusion_parameters, germline_parameters)                               
         
         # For QC samples, we don't want any calls to be filtered based on consequence
-        if re.search("QC", key) or re.search("TFNA", key):
+        if re.search("QC", key):
             command += " --disable_filtering"
+     
+        if opts.pipeline_arguments is not None:
+            command += str(opts.pipeline_arguments)
      
         command = " ".join(command.split())
         print command
@@ -571,169 +685,167 @@ pp = pprint.PrettyPrinter(indent=4)
 
 # Cycle through unique identifiers and map to different analyses in the server
 for name in names:
-
-    header = "SEARCHING IR SERVER FOR ANALYSES RELATED TO: %s" % name
-    print "-" * len(header)
-    print header
-    print "-" * len(header)
-    
-    repeat_flag = False
-    workflow_nested_dict, somatic_dict, germline_dict, fusion_dict, qc_dict = (defaultdict(lambda: None) for i in range(5))
-    workflow_dict[name] = workflow_nested_dict
-    for analysis in all_IR_analyses:
-        if (re.search(name,analysis['name']) or name==analysis['name'] or re.match(name,analysis['name'])) and analysis['start_date']==format_date_to_string(opts.date):
-            # Pass analyses with designated flags
-            pattern = re.compile('BETA|SKIP|FALSE') # Remove 'TEST|RUO'
-            if pattern.search(analysis['name'], re.IGNORECASE):
-                print "WARNING: Ignoring %s because it contains exclusion flag" % analysis['name']
-                try:
-                    workflow_dict.pop(name, None)
-                except KeyError:
-                    print "WARNING: %s is not in list of samples.  Did we remove it already?" % name
-                except Exception, e:
-                    print "ERROR: Unknown error: %s" % (str(e)) 
-            else:
-                
-                if re.search("SOMATIC",analysis['name'],re.IGNORECASE) or re.search("tumor-normal",analysis['workflow'], re.IGNORECASE):
-                    print "Case %s has somatic analysis = %s" % (name,analysis['name'])
+    if es.exists(index='dna-seq', doc_type='pipeline-analysis-overview-test', id=name):
+        print "ERROR: %s exists in database...passing..." % name
+    else:
+        header = "SEARCHING IR SERVER FOR ANALYSES RELATED TO: %s" % name
+        print "-" * len(header)
+        print header
+        print "-" * len(header)
+        
+        repeat_flag = False
+        workflow_nested_dict, somatic_dict, germline_dict, fusion_dict, qc_dict = (defaultdict(lambda: None) for i in range(5))
+        workflow_dict[name] = workflow_nested_dict
+        for analysis in all_IR_analyses:
+            if (re.search(name,analysis['name']) or name==analysis['name'] or re.match(name,analysis['name'])) and analysis['start_date']==format_date_to_string(opts.date):
+                # Pass analyses with designated flags
+                pattern = re.compile('BETA|SKIP|FALSE') # Remove 'TEST|RUO'
+                if pattern.search(analysis['name'], re.IGNORECASE):
+                    print "WARNING: Ignoring %s because it contains exclusion flag" % analysis['name']
+                    try:
+                        workflow_dict.pop(name, None)
+                    except KeyError:
+                        print "WARNING: %s is not in list of samples.  Did we remove it already?" % name
+                    except Exception, e:
+                        print "ERROR: Unknown error: %s" % (str(e)) 
+                else:
                     
-                    # Get base filepath on IR server
-                    somatic_base_filepath = determine_IR_basename_filepath(analysis['name'], analysis['id'], opts.url, IR_API_KEY)
-                    trash, dirpath = somatic_base_filepath.split("filepath=")
-                    dirpath = "/".join(dirpath.split("/")[:-1])
-                    remote_command_output = connect_to_IR_server_and_run_command("grep '##mapd' %s/outputs/AnnotatorActor-00/annotated_variants.vcf" % dirpath)
-                    match = re.search("##mapd=(.*)", remote_command_output.read().strip())
-                    mapd = round(float(match.group(1)), 3)
-                    qc_dict['mapd'] = mapd
-                    # Handle repeat analyses by choosing a repeat analysis if it exists.
-                    if re.search("repeat", analysis['name'], re.IGNORECASE):
-                        repeat_flag = True
+                    if re.search("SOMATIC",analysis['name'],re.IGNORECASE) or re.search("tumor-normal",analysis['workflow'], re.IGNORECASE):
+                        print "Case %s has somatic analysis = %s" % (name,analysis['name'])
                         
-                    else:
-                        
-                        if repeat_flag is True:
-                            pass
+                        # Get base filepath on IR server
+                        somatic_base_filepath = determine_IR_basename_filepath(analysis['name'], analysis['id'], opts.url, IR_API_KEY)
+                        trash, dirpath = somatic_base_filepath.split("filepath=")
+                        dirpath = "/".join(dirpath.split("/")[:-1])
+                        remote_command_output = connect_to_IR_server_and_run_command("grep '##mapd' %s/outputs/AnnotatorActor-00/annotated_variants.vcf" % dirpath)
+                        match = re.search("##mapd=(.*)", remote_command_output.read().strip())
+                        mapd = round(float(match.group(1)), 3)
+                        qc_dict['mapd'] = mapd
+                        # Handle repeat analyses by choosing a repeat analysis if it exists.
+                        if re.search("repeat", analysis['name'], re.IGNORECASE):
+                            repeat_flag = True
+                            
                         else:
-                            repeat_flag = False
-                        
-                    if repeat_flag is True and not re.search("repeat", analysis['name'], re.IGNORECASE):
-                        pass
-
-                    else:
-                        somatic_dict['somatic_analysis_status'] = analysis['status']
-                        somatic_dict['somatic_analysis_name'] = analysis['name']
-                        somatic_dict['somatic_analysis_id'] = analysis['id']
-                        somatic_dict['somatic_tumor_name'] = analysis['samples']['TUMOR']
-                        somatic_dict['somatic_normal_name'] = analysis['samples']['NORMAL']
-                        somatic_dict['somatic_workflow'] = analysis['workflow']
-                        somatic_dict['somatic_workflow_start_date'] = datetime.datetime.strftime(datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y"), "%Y-%m-%d")
-                        
-                        try:
-                            if re.search("_", analysis['name']):
-                                workflow_nested_dict['panel_name'] = analysis['name'].split("_")[1]
+                            
+                            if repeat_flag is True:
+                                pass
                             else:
-                                workflow_nested_dict['panel_name'] = analysis['name'].split("-")[2]
-                        except Exception, e:
-                            print "ERROR: Unable to define panel_name"
-                            print str(e)
+                                repeat_flag = False
+                            
+                        if repeat_flag is True and not re.search("repeat", analysis['name'], re.IGNORECASE):
+                            pass
+    
+                        else:
+                            somatic_dict['somatic_analysis_status'] = analysis['status']
+                            somatic_dict['somatic_analysis_name'] = analysis['name']
+                            somatic_dict['somatic_analysis_id'] = analysis['id']
+                            somatic_dict['somatic_tumor_name'] = analysis['samples']['TUMOR']
+                            somatic_dict['somatic_normal_name'] = analysis['samples']['NORMAL']
+                            somatic_dict['somatic_workflow'] = analysis['workflow']
+                            somatic_dict['somatic_workflow_start_date'] = datetime.datetime.strftime(datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y"), "%Y-%m-%d")
+                            
+                            try:
+                                if re.search("_", analysis['name']):
+                                    workflow_nested_dict['panel_name'] = analysis['name'].split("_")[1]
+                                else:
+                                    workflow_nested_dict['panel_name'] = analysis['name'].split("-")[2]
+                            except Exception, e:
+                                print "ERROR: Unable to define panel_name"
+                                print str(e)
+                            try:
+                                if re.search("_", analysis['name']):
+                                    somatic_dict['somatic_analysis_project'] = analysis['name'].split("_")[3]
+                            except:
+                                print "WARNING: No project has been defined for analysis %s" % analysis['name']
+                            try:
+                                if re.search("_", analysis['name']):
+                                    somatic_dict['somatic_analysis_comment'] = analysis['name'].split("_")[4]
+                            except:
+                                print "WARNING: No comment has been defined for analysis %s" % analysis['name']
+                                
+                            workflow_nested_dict['somatic_analysis'] = somatic_dict    
+                                
+                    else:
+                        workflow_nested_dict['somatic_analysis'] = somatic_dict
+                        
+                    if re.search("GERMLINE",analysis['name'],re.IGNORECASE):
+                        print "Case %s has germline analysis = %s" % (name,analysis['name'])
+                        germline_dict['germline_analysis_status'] = analysis['status']
+                        germline_dict['germline_analysis_name'] = analysis['name']
+                        germline_dict['germline_analysis_id'] = analysis['id']
+                        germline_dict['germline_sample_name'] = analysis['samples']['SAMPLE']
+                        germline_dict['germline_control_name'] = analysis['samples']['CONTROL']
+                        germline_dict['germline_workflow'] = analysis['workflow']
+                        germline_dict['germline_workflow_start_date'] = datetime.datetime.strftime(datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y"), "%Y-%m-%d")
+                        
                         try:
                             if re.search("_", analysis['name']):
-                                somatic_dict['somatic_analysis_project'] = analysis['name'].split("_")[3]
+                                germline_dict['germline_analysis_project'] = analysis['name'].split("_")[3]
                         except:
                             print "WARNING: No project has been defined for analysis %s" % analysis['name']
                         try:
                             if re.search("_", analysis['name']):
-                                somatic_dict['somatic_analysis_comment'] = analysis['name'].split("_")[4]
+                                germline_dict['germline_analysis_comment'] = analysis['name'].split("_")[4]
                         except:
                             print "WARNING: No comment has been defined for analysis %s" % analysis['name']
-                            
-                        workflow_nested_dict['somatic_analysis'] = somatic_dict    
-                            
-                else:
-                    workflow_nested_dict['somatic_analysis'] = somatic_dict
+                        
+                        workflow_nested_dict['germline_analysis'] = germline_dict
+                    else:
+                        workflow_nested_dict['germline_analysis'] = germline_dict
                     
-                if re.search("GERMLINE",analysis['name'],re.IGNORECASE):
-                    print "Case %s has germline analysis = %s" % (name,analysis['name'])
-                    germline_dict['germline_analysis_status'] = analysis['status']
-                    germline_dict['germline_analysis_name'] = analysis['name']
-                    germline_dict['germline_analysis_id'] = analysis['id']
-                    germline_dict['germline_sample_name'] = analysis['samples']['SAMPLE']
-                    germline_dict['germline_control_name'] = analysis['samples']['CONTROL']
-                    germline_dict['germline_workflow'] = analysis['workflow']
-                    germline_dict['germline_workflow_start_date'] = datetime.datetime.strftime(datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y"), "%Y-%m-%d")
+                    if re.search("FUSION",analysis['name'],re.IGNORECASE) or re.search("FUSIONS",analysis['name'],re.IGNORECASE):
+                        print "Case %s has fusion analysis = %s" % (name,analysis['name'])
+                        
+                        
+                        # Get base filepath on IR server
+                        somatic_base_filepath = determine_IR_basename_filepath(analysis['name'], analysis['id'], opts.url, IR_API_KEY)
+                        trash, dirpath = somatic_base_filepath.split("filepath=")
+                        dirpath = "/".join(dirpath.split("/")[:-1])
+                        remote_command_output = connect_to_IR_server_and_run_command("cat %s/outputs/RNACountsActor-00/fusions.vcf" % dirpath)
+                        # Extract FUSION QC info
+                        qc_dict['expr_control_sum'] = 0
+                        qc_dict['expr_control'] = defaultdict(dict)
+                        for line in remote_command_output:
+                            if re.search("SVTYPE=ExprControl", line):
+                                gene_match = re.search("GENE_NAME=(.+?);", line)
+                                gene = gene_match.group(1)
+                                read_count_match = re.search("READ_COUNT=(.+?);", line)
+                                read_count = int(read_count_match.group(1))
+                                qc_dict['expr_control'].update({gene : read_count})
+                                qc_dict['expr_control_sum'] += int(read_count)
+                            if re.search("##TotalMappedFusionPanelReads", line):
+                                match = re.search("##TotalMappedFusionPanelReads=(.*)", line)
+                                total_mapped_fusion_reads = int(match.group(1))
+                                qc_dict['totalMappedFusionPanelReads'] = total_mapped_fusion_reads
+                        
+                        fusion_dict['fusion_analysis_status'] = analysis['status']
+                        fusion_dict['fusion_analysis_name'] = analysis['name']
+                        fusion_dict['fusion_analysis_id'] = analysis['id']
+                        fusion_dict['fusion_workflow'] = analysis['workflow']
+                        fusion_dict['fusion_workflow_start_date'] = datetime.datetime.strftime(datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y"), "%Y-%m-%d")
+                        
+                        try:
+                            if re.search("_", analysis['name']):
+                                fusion_dict['fusion_analysis_project'] = analysis['name'].split("_")[3]
+                        except:
+                            print "WARNING: No project has been defined for analysis %s" % analysis['name']
+                        try:
+                            if re.search("_", analysis['name']):
+                                fusion_dict['fusion_analysis_comment'] = analysis['name'].split("_")[4]
+                        except:
+                            print "WARNING: No comment has been defined for analysis %s" % analysis['name']
                     
-                    try:
-                        if re.search("_", analysis['name']):
-                            germline_dict['germline_analysis_project'] = analysis['name'].split("_")[3]
-                    except:
-                        print "WARNING: No project has been defined for analysis %s" % analysis['name']
-                    try:
-                        if re.search("_", analysis['name']):
-                            germline_dict['germline_analysis_comment'] = analysis['name'].split("_")[4]
-                    except:
-                        print "WARNING: No comment has been defined for analysis %s" % analysis['name']
+                        
+                        workflow_nested_dict['fusion_analysis'] = fusion_dict
+                    else:
+                        workflow_nested_dict['fusion_analysis'] = fusion_dict
                     
-                    workflow_nested_dict['germline_analysis'] = germline_dict
-                else:
-                    workflow_nested_dict['germline_analysis'] = germline_dict
-                
-                if re.search("FUSION",analysis['name'],re.IGNORECASE) or re.search("FUSIONS",analysis['name'],re.IGNORECASE):
-                    print "Case %s has fusion analysis = %s" % (name,analysis['name'])
+                    workflow_nested_dict['qc'] = qc_dict
                     
-                    
-                    # Get base filepath on IR server
-                    somatic_base_filepath = determine_IR_basename_filepath(analysis['name'], analysis['id'], opts.url, IR_API_KEY)
-                    trash, dirpath = somatic_base_filepath.split("filepath=")
-                    dirpath = "/".join(dirpath.split("/")[:-1])
-                    print datetime.datetime.now()
-                    remote_command_output = connect_to_IR_server_and_run_command("cat %s/outputs/RNACountsActor-00/fusions.vcf" % dirpath)
-                    print datetime.datetime.now()
-                    # Extract FUSION QC info
-                    qc_dict['expr_control_sum'] = 0
-                    qc_dict['expr_control'] = defaultdict(dict)
-                    for line in remote_command_output:
-                        if re.search("SVTYPE=ExprControl", line):
-                            gene_match = re.search("GENE_NAME=(.+?);", line)
-                            gene = gene_match.group(1)
-                            read_count_match = re.search("READ_COUNT=(.+?);", line)
-                            read_count = int(read_count_match.group(1))
-                            qc_dict['expr_control'].update({gene : read_count})
-                            qc_dict['expr_control_sum'] += int(read_count)
-                        if re.search("##TotalMappedFusionPanelReads", line):
-                            match = re.search("##TotalMappedFusionPanelReads=(.*)", line)
-                            total_mapped_fusion_reads = int(match.group(1))
-                            qc_dict['totalMappedFusionPanelReads'] = total_mapped_fusion_reads
-                    
-                    print qc_dict
-                    
-                    fusion_dict['fusion_analysis_status'] = analysis['status']
-                    fusion_dict['fusion_analysis_name'] = analysis['name']
-                    fusion_dict['fusion_analysis_id'] = analysis['id']
-                    fusion_dict['fusion_workflow'] = analysis['workflow']
-                    fusion_dict['fusion_workflow_start_date'] = datetime.datetime.strftime(datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y"), "%Y-%m-%d")
-                    
-                    try:
-                        if re.search("_", analysis['name']):
-                            fusion_dict['fusion_analysis_project'] = analysis['name'].split("_")[3]
-                    except:
-                        print "WARNING: No project has been defined for analysis %s" % analysis['name']
-                    try:
-                        if re.search("_", analysis['name']):
-                            fusion_dict['fusion_analysis_comment'] = analysis['name'].split("_")[4]
-                    except:
-                        print "WARNING: No comment has been defined for analysis %s" % analysis['name']
-                
-                    
-                    workflow_nested_dict['fusion_analysis'] = fusion_dict
-                else:
-                    workflow_nested_dict['fusion_analysis'] = fusion_dict
-                
-                workflow_nested_dict['qc'] = qc_dict
-                
-                workflow_nested_dict['pipeline_start_date'] = datetime.datetime.strftime(datetime.datetime.utcnow(), "%Y-%m-%d")
-                workflow_nested_dict['pipeline_start_utc_timestamp'] = str(datetime.datetime.utcnow())
-                workflow_nested_dict['platform'] = 'IonTorrent'
-                workflow_nested_dict['pipeline_version'] = opts.pipeline_version
+                    workflow_nested_dict['pipeline_start_date'] = datetime.datetime.strftime(datetime.datetime.utcnow(), "%Y-%m-%d")
+                    workflow_nested_dict['pipeline_start_utc_timestamp'] = str(datetime.datetime.utcnow())
+                    workflow_nested_dict['platform'] = 'IonTorrent'
+                    workflow_nested_dict['pipeline_version'] = opts.pipeline_version
 
 # Perform QC check
 workflow_dict = perform_qc_check(workflow_dict)
@@ -863,17 +975,19 @@ for sample_name in workflow_dict.keys():
                     print "ERROR: Unknown error: %s" % (str(e))  
         
         else:
-            
             print "ERROR: At this time, this workflow %s is not supported by the IR_heartbeat." % workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']
-            try:
-                workflow_dict.pop(sample_name, None)
-            except KeyError:
-                print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-            except Exception, e:
-                print "ERROR: Unknown error: %s" % (str(e))  
-            #print "ERROR: BUT LETS TRY IT ANYWAY!"
-            #initiate_IR_download(workflow_dict, sample_name)
-    
+            if opts.force is False:
+                try:
+                    print "ERROR: Removing the following case from queue: %s" % sample_name
+                    workflow_dict.pop(sample_name, None)
+                except KeyError:
+                    print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+                except Exception, e:
+                    print "ERROR: Unknown error: %s" % (str(e))
+            else:
+                print "WARNING: Processing %s because --force option invoked." % sample_name
+                initiate_IR_download(workflow_dict, sample_name)
+        
 
 # Index BAMs in current working directory
 subprocess.call("for i in *.bam; do samtools index $i; done;", shell=True)
@@ -901,8 +1015,8 @@ if opts.bams_only is True:
 # Only execute this loop if we found cases to analyze
 if len(workflow_dict) > 0:
         
-#     cnx = connect_to_database("tumor_profiling_lab")
-#     cursor = cnx.cursor()
+    cnx = connect_to_database("tumor_profiling_lab")
+    cursor = cnx.cursor()
     
     for key in workflow_dict.keys():
         entry = json.dumps(workflow_dict[key])
@@ -914,30 +1028,13 @@ if len(workflow_dict) > 0:
                 print "ERROR: %s already exists in database...PASSING" % key
                 pass
             else:
-                res = es.create(index='dna-seq', doc_type='pipeline-analysis-overview-test', body=entry, id=key)
-                es.indices.refresh(index="dna-seq")
-                print "Was %s created in database?: %s" % (key, res['created'])
-                run_pipeline()
-            
-            
-            
-#             sql = """INSERT INTO Targeted_NGS_Pipeline_Automation 
-#                      (sample_name, panel_name, tumor_bam_name, tumor_barcode, normal_bam_name, normal_barcode, pipeline_start_date, pipeline_start_time, merged_bams, pipeline_status, 
-#                      somatic_analysis_name, somatic_analysis_id, somatic_analysis_status, somatic_normal_name, somatic_tumor_name, somatic_workflow, somatic_workflow_start_date, 
-#                      germline_analysis_name, germline_analysis_id, germline_analysis_status, germline_control_name, germline_sample_name, germline_workflow, germline_workflow_start_date, 
-#                      fusion_analysis_name, fusion_analysis_id, fusion_analysis_status, fusion_workflow, fusion_workflow_start_date) 
-#                      VALUES 
-#                      (%s, %s, %s, %s, %s, %s, %s, %s, '%s', %s, 
-#                      %s, %s, %s, %s, %s, %s, %s, 
-#                      %s, %s, %s, %s, %s, %s, %s, 
-#                      %s, %s, %s, %s, %s)"""
-#             cursor.execute(sql, (key, workflow_dict[key]['panel_name'], workflow_dict[key]['tumor_bam_name'], workflow_dict[key]['tumor_barcode'], workflow_dict[key]['normal_bam_name'], workflow_dict[key]['normal_barcode'], workflow_dict[key]['pipeline_start_date'],workflow_dict[key]['pipeline_start_time'], workflow_dict[key]['merged_bams'], '', # Pipeline status
-#                                                        workflow_dict[key]['somatic_analysis']['somatic_analysis_name'], workflow_dict[key]['somatic_analysis']['somatic_analysis_id'], workflow_dict[key]['somatic_analysis']['somatic_analysis_status'], workflow_dict[key]['somatic_analysis']['somatic_normal_name'], workflow_dict[key]['somatic_analysis']['somatic_tumor_name'], workflow_dict[key]['somatic_analysis']['somatic_workflow'], workflow_dict[key]['somatic_analysis']['somatic_workflow_start_date'],
-#                                                        workflow_dict[key]['germline_analysis']['germline_analysis_name'], workflow_dict[key]['germline_analysis']['germline_analysis_id'], workflow_dict[key]['germline_analysis']['germline_analysis_status'], workflow_dict[key]['germline_analysis']['germline_control_name'], workflow_dict[key]['germline_analysis']['germline_sample_name'], workflow_dict[key]['germline_analysis']['germline_workflow'], workflow_dict[key]['germline_analysis']['germline_workflow_start_date'],
-#                                                        workflow_dict[key]['fusion_analysis']['fusion_analysis_name'], workflow_dict[key]['fusion_analysis']['fusion_analysis_id'], workflow_dict[key]['fusion_analysis']['fusion_analysis_status'], workflow_dict[key]['fusion_analysis']['fusion_workflow'], workflow_dict[key]['fusion_analysis']['fusion_workflow_start_date']
-#                                                        ))
-#             cnx.commit()
-
+                if opts.skip_es_submit is False:
+                    res = es.create(index='dna-seq', doc_type='pipeline-analysis-overview-test', body=entry, id=key)
+                    es.indices.refresh(index="dna-seq")
+                    print "Was %s created in database?: %s" % (key, res['created'])
+                connect_to_mysql_and_load_qc_dict(key)
+                
+                run_pipeline()            
          
         except Exception, e:
             print("Unknown error occurred")
@@ -945,52 +1042,6 @@ if len(workflow_dict) > 0:
             sys.exit(1)
 
 #     cnx.close()
-
-
-
-
-# connection = pymongo.MongoClient()
-# tpl_db = connection['tpl']
-# tpl_targeted_ngs_pipeline_log = tpl_db['tpl_targeted_ngs_pipeline_log']
-# # for entry in entries:
-# #     entry_id = tpl_targeted_ngs_pipeline_log.insert_one(entry).inserted_id
-# 
-# for document in tpl_targeted_ngs_pipeline_log.find():
-#     pp.pprint(document)
-
-
-# def command_line_parsing(opts):
-#     
-#     mandatory_options = ['auth_key','url']
-#     for m in mandatory_options:
-#         # Making sure all mandatory options appeared
-#         if not opts.__dict__[m]:
-#             print "Mandatory option is missing!\n"
-#             parser.print_help()
-#             sys.exit()       
-# 
-#     if opts.input_analysis_name is not None:
-#         print "------------------------------------"
-#         print "OK: Proceeding in single sample mode"
-#         print "------------------------------------"
-#         return "SINGLE"
-#     elif opts.batch_input is not None:
-#         print "------------------------------------"
-#         print "OK: Proceeding in batch sample mode"
-#         print "------------------------------------"
-#         return "BATCH"
-#     elif opts.batch_input is not None and opts.input_analysis_name is not None:
-#         print "ERROR: Cannot run both single sample and batch sample modes simulataneously"    
-#         parser.print_help()
-#         sys.exit() 
-#     elif opts.batch_input is None and opts.input_analysis_name is None:
-#         print "ERROR: No input analysis name provided"
-#         parser.print_help()
-#         sys.exit()
-#     else:
-#         print "ERROR: Command line parsing failed"
-#         parser.print_help()
-#         sys.exit()        
 
       
 # mode = command_line_parsing(opts)

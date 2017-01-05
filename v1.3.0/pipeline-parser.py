@@ -243,7 +243,21 @@ def main():
                     self.imbalance_assay = "" 
                     self.annotation = ""
                     self.rpm = re.search("RPM=(.+?);", line).group(1)
-    
+
+            class GeneExpression:
+                def __init__(self, split_line, line):
+                    self.variant_id = split_line[2]
+                    self.locus = split_line[0] + ":" + str(split_line[1]) + " - " + re.search(":(\d*)", split_line[4]).group(1)
+                    #self.genes_and_exons = re.search("(\w+?)\.\w+?\..+?", self.variant_id).group(1)
+                    self.genes_and_exons = split_line[2]
+                    self.read_count = re.search("READ_COUNT=(\d+);", line).group(1)
+                    self.oncomine_gene_class = ""
+                    self.oncomine_variant_class = ""
+                    self.detection = "See Doc."
+                    self.imbalance_assay = "" 
+                    self.annotation = ""
+                    self.rpm = re.search("RPM=(.+?);", line).group(1)
+
             class FusionEntry:
                 def __init__(self, split_line, line):
                     self.variant_id = re.search("(.+?)_\d", split_line[2]).group(1)
@@ -290,6 +304,8 @@ def main():
                 self.expr_control = ExprControl(split_line, line)
             elif svtype == "5p3pAssays":
                 self.imbalance_assay = ImbalanceAssay(split_line, line)
+            elif svtype == "GeneExpression":
+                self.gene_expression = GeneExpression(split_line, line)
     
     def natural_sort(l): 
         convert = lambda text: int(text) if text.isdigit() else text.lower() 
@@ -1472,6 +1488,21 @@ def main():
                                                                                     'Variant ID' : line_obj.expr_control.variant_id,
                                                                                     'Read Counts per million' : line_obj.expr_control.rpm
                                                                                     }
+                        elif line_obj.svtype == "GeneExpression":
+                            master_fusion_dict[line_obj.gene_expression.variant_id] = {'Comment' : '',
+                                                                                    'Locus' : line_obj.gene_expression.locus,
+                                                                                    'Type' : line_obj.svtype,
+                                                                                    'Genes(Exons)' : line_obj.gene_expression.genes_and_exons,
+                                                                                    'Read Counts' : line_obj.gene_expression.read_count,
+                                                                                    'Oncomine Variant Class' : line_obj.gene_expression.oncomine_variant_class,
+                                                                                    'Oncomine Gene Class' : line_obj.gene_expression.oncomine_gene_class,
+                                                                                    'Detection' : line_obj.gene_expression.detection,
+                                                                                    "3'/5' Imbalance" : line_obj.gene_expression.imbalance_assay,
+                                                                                    'COSMIC/NCBI' : line_obj.gene_expression.annotation,
+                                                                                    'Variant ID' : line_obj.gene_expression.variant_id,
+                                                                                    'Read Counts per million' : line_obj.gene_expression.rpm
+                                                                                    }
+                        
                         elif line_obj.svtype == "5p3pAssays":
                             master_fusion_dict[line_obj.imbalance_assay.variant_id] = {'Comment' : '',
                                                                                     'Locus' : line_obj.imbalance_assay.locus,

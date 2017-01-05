@@ -301,12 +301,15 @@ def main():
         MUTECT2_PON = MUTECT2_PON_OCP
         mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
     else:
-        sys.exit("ERROR: Selected panel (%s) does not have PON for Mutect2" % (opts.regions))
+        if opts.ionreporter_only is False:
+            
+            sys.exit("ERROR: Selected panel (%s) does not have PON for Mutect2" % (opts.regions))
              
     #---STRELKA VARIANT CALLING---#
-     
-    strelka_unfiltered_vcfs = Strelka_somatic_variant_calling_command(STRELKA_EXE,opts.normal,opts.tumor,REF_FASTA,STRELKA_CONFIG,opts.base_output)    
-    strelka_unfiltered_vcf = combine_vcf(VCFLIB_DIR, strelka_unfiltered_vcfs, opts.base_output, "strelka.somatic.unfiltered")
+    
+    if opts.ionreporter_only is False:
+        strelka_unfiltered_vcfs = Strelka_somatic_variant_calling_command(STRELKA_EXE,opts.normal,opts.tumor,REF_FASTA,STRELKA_CONFIG,opts.base_output)    
+        strelka_unfiltered_vcf = combine_vcf(VCFLIB_DIR, strelka_unfiltered_vcfs, opts.base_output, "strelka.somatic.unfiltered")
 
     #-------------------------------------------------------------------------------------------
     #--------------------------------GERMLINE VARIANT CALLING-----------------------------------

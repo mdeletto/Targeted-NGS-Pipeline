@@ -406,7 +406,7 @@ def apply_CNV_filter(wb,sheetname,indices):
                 for cell in row:
                     cell.font = Font(name="Liberation Sans",size=10,color='909090')
             else:
-                if precision_score.value < 20:
+                if int(precision_score.value) < 20:
                     comment.value = "OK: Low precision"
                     precision_score.font = Font(name="Liberation Sans",size=10,color='909090')
                 else:
@@ -418,6 +418,7 @@ def apply_fusion_filter(wb,sheetname,indices):
     fusion_read_count_sort_dict = {} # only 'Fusion' calls
     prime_assay_rows = []
     control_rows = []
+    gene_expression_rows = []
     
     for row in fusion_sheet.rows:
         row_counter+=1
@@ -434,6 +435,8 @@ def apply_fusion_filter(wb,sheetname,indices):
                 prime_assay_rows.append(row)
             elif fusion_type.value == "ExprControl":
                 control_rows.append(row)
+            elif fusion_type.value == "GeneExpression":
+                gene_expression_rows.append(row)
             else:
                 print "Unsupported fusion type"
 
@@ -466,6 +469,15 @@ def apply_fusion_filter(wb,sheetname,indices):
             column_letter = colnum_string(column_counter)
             coordinate = str(column_letter)+str(row_counter)
             new_coordinate_key_value[coordinate] = value
+    for row in gene_expression_rows:
+        row_counter += 1
+        column_counter = 0
+        for cell in row:
+            column_counter += 1
+            value = cell.value
+            column_letter = colnum_string(column_counter)
+            coordinate = str(column_letter)+str(row_counter)
+            new_coordinate_key_value[coordinate] = value
     
     for key in new_coordinate_key_value.keys():
         fusion_sheet[key] = new_coordinate_key_value[key]
@@ -487,7 +499,7 @@ def apply_fusion_filter(wb,sheetname,indices):
                     for cell in row:
                         cell.font = Font(name="Liberation Sans",size=10,color='909090')
                     comment.value = "Absent"
-            elif fusion_type.value == "ExprControl":
+            elif fusion_type.value == "ExprControl" or fusion_type.value == "GeneExpression":
                 for cell in row:
                     cell.font = Font(name="Liberation Sans",size=10,color='909090')
                 if int(read_counts.value) >= 20:
@@ -497,7 +509,8 @@ def apply_fusion_filter(wb,sheetname,indices):
             elif fusion_type.value == "5p3pAssays":
                 for cell in row:
                     cell.font = Font(name="Liberation Sans",size=10,color='909090')
-                comment.value = "5p3pAssay"   
+                comment.value = "5p3pAssay"
+ 
 
 def colnum_string(n):
     div=n
