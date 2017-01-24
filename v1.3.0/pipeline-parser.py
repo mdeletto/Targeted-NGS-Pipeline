@@ -43,7 +43,7 @@ def main():
             self.type = split_tsv_line[2]
             self.length = split_tsv_line[4]
             self.iscn = split_tsv_line[11]
-            match = re.search("x(\d+?)", self.iscn)
+            match = re.search("x(\d*)", self.iscn)
             self.ploidy = match.group(1)
             
             self.confidence = split_tsv_line[12]
@@ -492,6 +492,7 @@ def main():
                             
                             
                             vcf_input_obj = VCF_Fields(vcf_input, program, status)
+                            
                             
                             try:
                                 self.comment = ""

@@ -40,6 +40,7 @@ group.add_option("--pipeline_version","-p", help="Pipeline version to use.  Defa
 group.add_option("--additional-pipeline-arguments", help="Arguments to pass to the pipeline for additional control over the pipeline.",dest='pipeline_arguments',action='store',default=None)#datetime.date.today())
 group.add_option("--force","-f", help="Force unsupported panels through the pipeline anyway.  NOT RECOMMENDED.",dest='force',action='store_true',default=False)
 group.add_option("--skip-es-submit", help="Skip submitting the case ID to ElasticSearch.  Default=[%default]",dest='skip_es_submit',action='store_true',default=False)
+group.add_option("--enable-manual-control", help="Manual control over samples entering the pipeline.  Default=[%default]",dest='enable_manual_sample_control',action='store_true',default=False)
 group.add_option("-v", help="verbose <[%default]>", dest='verbose',action='store_true',default=False)
 parser.add_option_group(group)
 
@@ -161,6 +162,21 @@ def IR_analysis_summary_view():
     return all_IR_analyses
 
 def select_analyses(all_IR_analyses):
+    
+    def remove_sample_manually(name):
+        input_string = raw_input("Would you like to remove %s from the list of samples for analysis? (Y\N): " % name)
+        
+        
+        if input_string == "Y" or input_string == "Yes":
+            names_to_remove.append(name)
+        elif input_string == "N" or input_string == "No":
+            pass
+        else:
+            print "ERROR: Input not recognized as a valid value.  Please try again."
+            remove_sample_manually(name)
+        
+        return names_to_remove
+    
     names = []
     date = format_date_to_string(opts.date)
 
@@ -181,8 +197,18 @@ def select_analyses(all_IR_analyses):
     
     
     names = list(set(names))
-    print names
+    print "DETECTED SAMPLE LIST: %s" % ", ".join(names)
     
+    if opts.enable_manual_sample_control is True:
+        names_to_remove = []
+        for name in names:
+            names_to_remove = remove_sample_manually(name)
+        
+        for name in names_to_remove:
+            names.remove(name)
+        
+        print "REVISED SAMPLE LIST: %s" % ", ".join(names)
+        
     return names
 
 def execute_scp_bam_copy(path,bam_barcode_id):
@@ -807,9 +833,9 @@ for name in names:
                         qc_dict['expr_control'] = defaultdict(dict)
                         for line in remote_command_output:
                             if re.search("SVTYPE=ExprControl", line):
-                                gene_match = re.search("GENE_NAME=(.+?);", line)
+                                gene_match = re.search("GENE_NAME=(\w+?);", line)
                                 gene = gene_match.group(1)
-                                read_count_match = re.search("READ_COUNT=(.+?);", line)
+                                read_count_match = re.search("READ_COUNT=(\d+?);", line)
                                 read_count = int(read_count_match.group(1))
                                 qc_dict['expr_control'].update({gene : read_count})
                                 qc_dict['expr_control_sum'] += int(read_count)

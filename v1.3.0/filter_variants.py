@@ -406,7 +406,7 @@ def apply_CNV_filter(wb,sheetname,indices):
                 for cell in row:
                     cell.font = Font(name="Liberation Sans",size=10,color='909090')
             else:
-                if int(precision_score.value) < 20:
+                if float(precision_score.value) < 20:
                     comment.value = "OK: Low precision"
                     precision_score.font = Font(name="Liberation Sans",size=10,color='909090')
                 else:
