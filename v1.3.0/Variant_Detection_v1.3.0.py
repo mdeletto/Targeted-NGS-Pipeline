@@ -115,7 +115,7 @@ MUTECT2_PON_CCP = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTec
 
 # POPULATION NORMALS
 
-POPULATION_NORMAL_BAM_OCP = '/home/michael/YNHH/Reference_Files/Population_Normal/Population_Normal.OCP.v1.bam'
+POPULATION_NORMAL_BAM_OCP = '/home/michael/YNHH/Reference_Files/Population_Normal/PopulationNormal_OCP_v2.bam'
 #POPULATION_NORMAL_BAM_OCP = '/home/michael/YNHH/Reference_Files/Population_Normal/simulated/Population_Normal.OCP.v1.simulated.bam'
 POPULATION_NORMAL_BAM_CCP = '/home/michael/YNHH/Reference_Files/Population_Normal/Population_Normal_PGM_v2.CCP.bam'
 
@@ -124,7 +124,7 @@ POPULATION_NORMAL_BAM_CCP = '/home/michael/YNHH/Reference_Files/Population_Norma
 IR_API_KEY = "UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY"
 
 def main():
-    header = "---STARTING TPL Targeted NGS Pipeline v1.3 BETA ---"
+    header = "---STARTING TPL Targeted NGS Pipeline v1.3---"
     print "-" * len(header)
     print header
     print "-" * len(header)    
