@@ -1333,11 +1333,13 @@ def main():
             for variant_entry in master_json_list:
                 #pp.pprint(variant_entry)
                 variant_entry = defaultdict(lambda: "", variant_entry)
-                summary_sheet_values_dict = gather_summary_sheet_values(variant_entry)
-                summary_sheet_row_counter = write_summary_sheet(summary_sheet_values_dict, summary_sheet_row_counter)
-                transcript_sheet_row_counter = write_transcript_sheet(variant_entry, transcript_sheet_row_counter)
-                colocated_sheet_row_counter = write_colocated_sheet(variant_entry, colocated_sheet_row_counter)
-                regulatory_sheet_row_counter = write_regulatory_sheet(variant_entry, regulatory_sheet_row_counter)
+                # skip variants that have no consequence, the pipeline should have filtered these
+                if variant_entry['most_severe_consequence'] != 'null' and variant_entry['most_severe_consequence'] is not None:
+                    summary_sheet_values_dict = gather_summary_sheet_values(variant_entry)
+                    summary_sheet_row_counter = write_summary_sheet(summary_sheet_values_dict, summary_sheet_row_counter)
+                    transcript_sheet_row_counter = write_transcript_sheet(variant_entry, transcript_sheet_row_counter)
+                    colocated_sheet_row_counter = write_colocated_sheet(variant_entry, colocated_sheet_row_counter)
+                    regulatory_sheet_row_counter = write_regulatory_sheet(variant_entry, regulatory_sheet_row_counter)
     
             #autofit_columns()
             color_duplicate_entries()

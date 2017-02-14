@@ -285,7 +285,7 @@ def download_bams_from_IR(IR_download_link,IR_download_dir,workflow_dict_key):
                 subprocess.call("/home/michael/bin/samtools-1.1/samtools merge -f %s/%s-%s-merged.bam %s/%s-%s-%s.bam %s/%s-%s-%s.bam" % (os.getcwd(),sample_name,sample_type,os.getcwd(),sample_name,sample_type,str(1),os.getcwd(),sample_name,sample_type,str(2)),shell=True)
                 subprocess.call("rm -rf %s/%s-%s-%s.bam %s/%s-%s-%s.bam" % (os.getcwd(),sample_name,sample_type,str(1),os.getcwd(),sample_name,sample_type,str(2)), shell=True)
                 #pysam.index("%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type))
-                bam_pipeline_flags['%s_bam_name' %(sample_type)] = "%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)
+                bam_pipeline_flags['%s_bam_name' %(sample_type)] = "%s-%s-merged.bam" % (sample_name,sample_type)
                 bam_pipeline_flags['%s_bam_path' % (sample_type)] = "%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)
             # If single BAM exists in sample definition .rrs file
             else:
@@ -299,7 +299,7 @@ def download_bams_from_IR(IR_download_link,IR_download_dir,workflow_dict_key):
                 bam_pipeline_flags['%s_bam_name' % (sample_type)] = "%s-%s.bam" % (sample_name,sample_type)
         elif os.path.isfile("%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)):
             bam_pipeline_flags['merged_bams'] = True
-            bam_pipeline_flags['%s_bam_name' %(sample_type)] = "%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)
+            bam_pipeline_flags['%s_bam_name' %(sample_type)] = "%s-%s-merged.bam" % (sample_name,sample_type)
             bam_pipeline_flags['%s_bam_path' % (sample_type)] = "%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)
         elif os.path.isfile("%s/%s-%s.bam" % (os.getcwd(),sample_name,sample_type)):
             bam_pipeline_flags['merged_bams'] = False
@@ -556,12 +556,12 @@ def connect_to_mysql_and_load_qc_dict(sample_name):
             else:
                 qc_dict['geneFusionAssessment'] = 0
         
-            # Add "FAIL" prefix to the comment, unless it already exists
-            if runErrorNotes != "":
-                if re.search("FAIL", runErrorNotes, re.IGNORECASE) or re.search("FLAG", runErrorNotes, re.IGNORECASE):
-                    pass
-                else:
-                    runErrorNotes = "FAIL:" + runErrorNotes
+#             # Add "FAIL" prefix to the comment, unless it already exists
+#             if runErrorNotes != "":
+#                 if re.search("FAIL", runErrorNotes, re.IGNORECASE) or re.search("FLAG", runErrorNotes, re.IGNORECASE):
+#                     pass
+#                 else:
+#                     runErrorNotes = "FAIL:" + runErrorNotes
         
             # PERFORM THE MYSQL DATABASE UPDATE FOR THE ANALYSIS
             print "MAPD = %s" % qc_dict['mapd']
@@ -676,6 +676,20 @@ def run_pipeline():
         print command
         subprocess.call(command, shell=True)
 
+def move_bams_to_base_directory_and_change_dir(base_output):
+    """Create a subdirectory for each case, move BAMs into it, and cd into the dir.
+    This allows us to make sure files are specific to the case and standard files like "log.txt" don't get moved from another analysis.
+    """
+    try:
+        if not os.path.exists(base_output):
+            os.makedirs(base_output)
+        subprocess.call("mv %s*.bam* %s/" % (base_output, base_output),shell=True)
+        os.chdir(base_output)
+    except Exception, e:
+        print "ERROR: %s" % str(e)
+        print "ERROR: Could not create case directory, move BAMs, and cd into that directory"
+        
+
 #####################################
 #---DYNAMIC ENVIRONMENT VARIABLES---#
 #####################################
@@ -711,7 +725,7 @@ pp = pprint.PrettyPrinter(indent=4)
 
 # Cycle through unique identifiers and map to different analyses in the server
 for name in names:
-    if es.exists(index='dna-seq', doc_type='pipeline-analysis-overview-test', id=name):
+    if es.exists(index='dna-seq', doc_type='pipeline-analysis-overview-test', id=name) and opts.skip_es_submit is False:
         print "ERROR: %s exists in database...passing..." % name
     else:
         header = "SEARCHING IR SERVER FOR ANALYSES RELATED TO: %s" % name
@@ -839,6 +853,7 @@ for name in names:
                                 read_count = int(read_count_match.group(1))
                                 qc_dict['expr_control'].update({gene : read_count})
                                 qc_dict['expr_control_sum'] += int(read_count)
+
                             if re.search("##TotalMappedFusionPanelReads", line):
                                 match = re.search("##TotalMappedFusionPanelReads=(.*)", line)
                                 total_mapped_fusion_reads = int(match.group(1))
@@ -883,6 +898,143 @@ if opts.verbose is True: pp.pprint(json.loads(json.dumps(workflow_dict)))
 #---PING IR AND DOWNLOAD BAM FILES---#
 ######################################
 
+def IR_analysis_control():
+
+
+        
+        required_analyses = {
+                             'Oncomine Comprehensive' : {
+                                                         'somatic_analysis' : 'required',
+                                                         'germline_analysis' : 'required',
+                                                         'fusion_analysis' : 'optional'
+                                                         },
+                             
+                             'Comprehensive Cancer Panel' : {
+                                                             'somatic_analysis' : 'required',
+                                                             'germline_analysis' : 'required',
+                                                             'fusion_analysis' : 'N/A'               
+                                                             },
+                             
+                             'Hotspot Mutation Panel' : {
+                                                        'somatic_analysis' : 'required',
+                                                        'germline_analysis' : 'optional',
+                                                        'fusion_analysis' : 'N/A'  
+                                                         },
+                             
+                             'TFNA' : {
+                                        'somatic_analysis' : 'required',
+                                        'germline_analysis' : 'optional',
+                                        'fusion_analysis' : 'required'  
+                                       }
+                             }
+
+        for panel_name in required_analyses:
+            if re.search(panel_name, str(workflow_dict[sample_name]['somatic_analysis']['somatic_workflow'])):
+                detected_panel_name = panel_name
+            else:
+                pass
+
+        try:
+            detected_panel_name = detected_panel_name
+        except NameError:
+            if opts.force is True:
+                print "WARNING: Panel name could not be autodetected.  Attempting to force this panel through the pipeline, since --force option was invoked."
+                detected_panel_name = "UNK"
+                required_analyses.update({"UNK" : {
+                                                    'somatic_analysis' : 'required',
+                                                    'germline_analysis' : 'optional',
+                                                    'fusion_analysis' : 'optional'  
+                                                   }
+                                           })
+            else:
+                print "ERROR: Unable to determine panel name.\nERROR: Somatic workflow required for the IR_heartbeat to begin"
+                workflow_dict.pop(sample_name)
+        
+        for required_analysis in required_analyses[detected_panel_name]:
+            if required_analyses[detected_panel_name][required_analysis] == 'required':
+                if bool(workflow_dict[sample_name][required_analysis]['%s_name' % required_analysis]) is False:
+                    print "ERROR: %s required for %s" % (required_analysis, detected_panel_name)
+                    workflow_dict.pop(sample_name, None)
+                else:
+                    if re.search("SUCCESSFUL", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis]):
+                        
+                        if required_analysis == 'somatic_analysis':
+                            
+                            initiate_IR_download(workflow_dict, sample_name)
+                        
+                    elif re.search("FAIL", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis]):
+                        
+                        "WARNING: %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name][required_analysis]['%s_name' % required_analysis],
+                                                                                                    sample_name,
+                                                                                                    workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis])
+                        
+                        
+                        
+                    elif re.search("PENDING", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis], re.IGNORECASE):
+                        
+                        print "ERROR: %s is not complete.  Skipping %s until ready..." % (required_analysis, sample_name)
+                        try:
+                            workflow_dict.pop(sample_name, None)
+                        except KeyError:
+                            print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+                        except Exception, e:
+                            print "ERROR: Unknown error: %s" % (str(e)) 
+            
+                    else:
+                        
+                        print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis],
+                                                                                               workflow_dict[sample_name][required_analysis]['%s_workflow' % required_analysis.split("_")[0]])
+                        try:
+                            workflow_dict.pop(sample_name, None)
+                        except KeyError:
+                            print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+                        except Exception, e:
+                            print "ERROR: Unknown error: %s" % (str(e))
+                            
+            elif required_analyses[detected_panel_name][required_analysis] == 'optional':
+                if bool(workflow_dict[sample_name][required_analysis]['%s_name' % required_analysis]) is False:
+                    print "WARNING: %s not detected for %s" % (required_analysis, detected_panel_name)
+                else:
+                    if re.search("SUCCESSFUL", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis]):
+                        
+                        if required_analysis == 'somatic_analysis':
+                            
+                            initiate_IR_download(workflow_dict, sample_name)
+                        
+                    elif re.search("FAIL", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis]):
+                        
+                        "WARNING: %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name][required_analysis]['%s_name' % required_analysis],
+                                                                                                    sample_name,
+                                                                                                    workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis])
+                        
+                        
+                        
+                    elif re.search("PENDING", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis], re.IGNORECASE):
+                        
+                        print "ERROR: %s is not complete.  Skipping %s until ready..." % (required_analysis, sample_name)
+                        try:
+                            workflow_dict.pop(sample_name, None)
+                        except KeyError:
+                            print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+                        except Exception, e:
+                            print "ERROR: Unknown error: %s" % (str(e)) 
+            
+                    else:
+                        
+                        print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis],
+                                                                                               workflow_dict[sample_name][required_analysis]['%s_workflow' % required_analysis.split("_")[0]])
+                        try:
+                            workflow_dict.pop(sample_name, None)
+                        except KeyError:
+                            print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+                        except Exception, e:
+                            print "ERROR: Unknown error: %s" % (str(e))
+
+            else:
+                
+                pass
+
+
 
 header = "FINAL LIST OF SAMPLES FOR PIPELINE ANALYSIS:\n(NOTE: These samples will be checked across database and will fail if they already exist!  Try 'grep ERROR').\n"
 print "-" * len(header)
@@ -895,128 +1047,169 @@ for sample_name in workflow_dict.keys():
     
     print "(%d) PROCESSING %s..." % (counter, sample_name)
     counter += 1
-    if es.exists(index='dna-seq', doc_type='pipeline-analysis-overview-test', id=sample_name):
+    if es.exists(index='dna-seq', doc_type='pipeline-analysis-overview-test', id=sample_name) and opts.skip_es_submit is False:
         print "ERROR: %s exists in database...passing..." % sample_name
     else:
-        if re.search("Oncomine Comprehensive",workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']):
-            
-            if re.search("SUCCESSFUL", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status']):
-            
-                if bool(workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_name']) is False:
-                    
-                    print "WARNING: Proceeding as DNA only OCP..."
-                    initiate_IR_download(workflow_dict,sample_name)
-                
-                elif bool(workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_name']) is True:
-                    
-                    if re.search("SUCCESSFUL",workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status']):
-                    
-                        initiate_IR_download(workflow_dict,sample_name)
-                        
-                    elif re.search("FAIL", workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'], re.IGNORECASE):
-                        
-                        print "WARNING: SOMATIC ANALYSIS %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_name'],
-                                                                                                                          sample_name,
-                                                                                                                          workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'])
-                    
-                    elif re.search("PENDING", workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'], re.IGNORECASE):
-                        
-                        print "ERROR: Somatic analysis is not complete.  Skipping %s until ready..." % sample_name
-                        try:
-                            workflow_dict.pop(sample_name, None)
-                        except KeyError:
-                            print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-                        except Exception, e:
-                            print "ERROR: Unknown error: %s" % (str(e)) 
-
-                    else:
-                        
-                        print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'],
-                                                                                               workflow_dict[sample_name]['fusion_analysis']['fusion_workflow'])
-                        try:
-                            workflow_dict.pop(sample_name, None)
-                        except KeyError:
-                            print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-                        except Exception, e:
-                            print "ERROR: Unknown error: %s" % (str(e)) 
-    
-            elif re.search("FAIL", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE):
-                
-                print "WARNING: SOMATIC ANALYSIS %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_name'],
-                                                                                                                  sample_name,
-                                                                                                                  workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'])
-            
-            elif re.search("PENDING", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE):
-                
-                print "ERROR: Somatic analysis is not complete.  Skipping %s until ready..." % sample_name
-                try:
-                    workflow_dict.pop(sample_name, None)
-                except KeyError:
-                    print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-                except Exception, e:
-                    print "ERROR: Unknown error: %s" % (str(e)) 
-    
-            else:
-                
-                print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'],
-                                                                                       workflow_dict[sample_name]['somatic_analysis']['somatic_workflow'])
-                try:
-                    workflow_dict.pop(sample_name, None)
-                except KeyError:
-                    print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-                except Exception, e:
-                    print "ERROR: Unknown error: %s" % (str(e)) 
-    
-        elif re.search("Comprehensive Cancer Panel", workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']) or re.search("HSM", workflow_dict[sample_name]['panel_name']) or re.search("TFNA", workflow_dict[sample_name]['panel_name']):
-            
-            if re.search("SUCCESSFUL", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status']):
-                
-                initiate_IR_download(workflow_dict,sample_name)
-                
-            elif re.search("FAIL", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE):
-                
-                print "WARNING: SOMATIC ANALYSIS %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_name'],
-                                                                                                                  sample_name,
-                                                                                                                  workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'])
-            
-            elif re.search("PENDING", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE):
-                
-                print "ERROR: Somatic analysis is not complete.  Skipping %s until ready..." % sample_name
-                try:
-                    workflow_dict.pop(sample_name, None)
-                except KeyError:
-                    print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-                except Exception, e:
-                    print "ERROR: Unknown error: %s" % (str(e)) 
-    
-            else:
-                
-                print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'],
-                                                                                       workflow_dict[sample_name]['somatic_analysis']['somatic_workflow'])
-                try:
-                    workflow_dict.pop(sample_name, None)
-                except KeyError:
-                    print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-                except Exception, e:
-                    print "ERROR: Unknown error: %s" % (str(e))  
         
-        else:
-            print "ERROR: At this time, this workflow %s is not supported by the IR_heartbeat." % workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']
-            if opts.force is False:
-                try:
-                    print "ERROR: Removing the following case from queue: %s" % sample_name
-                    workflow_dict.pop(sample_name, None)
-                except KeyError:
-                    print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-                except Exception, e:
-                    print "ERROR: Unknown error: %s" % (str(e))
-            else:
-                print "WARNING: Processing %s because --force option invoked." % sample_name
-                initiate_IR_download(workflow_dict, sample_name)
+        IR_analysis_control()
+        
+#         if re.search("Oncomine Comprehensive",workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']):
+#             
+#             if re.search("SUCCESSFUL", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status']):
+#                 
+# #                 if bool(workflow_dict[sample_name]['germline_analysis']['germline_analysis_name']) is False:
+# #                     
+# #                     print "WARNING: Germline analysis not performed"
+# #                     
+# #                 elif bool(workflow_dict[sample_name]['germline_analysis']['germline_analysis_name']) is True:
+# #                     
+# #                     if re.search("SUCCESSFUL",workflow_dict[sample_name]['germline_analysis']['germline_analysis_status']):
+# #                     
+# #                         initiate_IR_download(workflow_dict,sample_name)
+# #                         
+# #                     elif re.search("FAIL", workflow_dict[sample_name]['germline_analysis']['germline_analysis_status'], re.IGNORECASE):
+# #                         
+# #                         print "WARNING: SOMATIC ANALYSIS %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name]['germline_analysis']['germline_analysis_name'],
+# #                                                                                                                           sample_name,
+# #                                                                                                                           workflow_dict[sample_name]['germline_analysis']['germline_analysis_status'])
+# #                     
+# #                     elif re.search("PENDING", workflow_dict[sample_name]['germline_analysis']['germline_analysis_status'], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name]['germline_analysis']['germline_analysis_status'], re.IGNORECASE):
+# #                         
+# #                         print "ERROR: Somatic analysis is not complete.  Skipping %s until ready..." % sample_name
+# #                         try:
+# #                             workflow_dict.pop(sample_name, None)
+# #                         except KeyError:
+# #                             print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+# #                         except Exception, e:
+# #                             print "ERROR: Unknown error: %s" % (str(e)) 
+# # 
+# #                     else:
+# #                         
+# #                         print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name]['germline_analysis']['germline_analysis_status'],
+# #                                                                                                workflow_dict[sample_name]['germline_analysis']['germline_workflow'])
+# #                         try:
+# #                             workflow_dict.pop(sample_name, None)
+# #                         except KeyError:
+# #                             print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+# #                         except Exception, e:
+# #                             print "ERROR: Unknown error: %s" % (str(e)) 
+#             
+#                 if bool(workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_name']) is False:
+#                     
+#                     print "WARNING: Proceeding as DNA only OCP..."
+#                     initiate_IR_download(workflow_dict,sample_name)
+#                 
+#                 elif bool(workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_name']) is True:
+#                     
+#                     if re.search("SUCCESSFUL",workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status']):
+#                     
+#                         initiate_IR_download(workflow_dict,sample_name)
+#                         
+#                     elif re.search("FAIL", workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'], re.IGNORECASE):
+#                         
+#                         print "WARNING: SOMATIC ANALYSIS %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_name'],
+#                                                                                                                           sample_name,
+#                                                                                                                           workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'])
+#                     
+#                     elif re.search("PENDING", workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'], re.IGNORECASE):
+#                         
+#                         print "ERROR: Somatic analysis is not complete.  Skipping %s until ready..." % sample_name
+#                         try:
+#                             workflow_dict.pop(sample_name, None)
+#                         except KeyError:
+#                             print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+#                         except Exception, e:
+#                             print "ERROR: Unknown error: %s" % (str(e)) 
+# 
+#                     else:
+#                         
+#                         print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'],
+#                                                                                                workflow_dict[sample_name]['fusion_analysis']['fusion_workflow'])
+#                         try:
+#                             workflow_dict.pop(sample_name, None)
+#                         except KeyError:
+#                             print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+#                         except Exception, e:
+#                             print "ERROR: Unknown error: %s" % (str(e)) 
+#     
+#             elif re.search("FAIL", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE):
+#                 
+#                 print "WARNING: SOMATIC ANALYSIS %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_name'],
+#                                                                                                                   sample_name,
+#                                                                                                                   workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'])
+#             
+#             elif re.search("PENDING", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE):
+#                 
+#                 print "ERROR: Somatic analysis is not complete.  Skipping %s until ready..." % sample_name
+#                 try:
+#                     workflow_dict.pop(sample_name, None)
+#                 except KeyError:
+#                     print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+#                 except Exception, e:
+#                     print "ERROR: Unknown error: %s" % (str(e)) 
+#     
+#             else:
+#                 
+#                 print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'],
+#                                                                                        workflow_dict[sample_name]['somatic_analysis']['somatic_workflow'])
+#                 try:
+#                     workflow_dict.pop(sample_name, None)
+#                 except KeyError:
+#                     print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+#                 except Exception, e:
+#                     print "ERROR: Unknown error: %s" % (str(e)) 
+#     
+#         elif re.search("Comprehensive Cancer Panel", workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']) or re.search("HSM", workflow_dict[sample_name]['panel_name']) or re.search("TFNA", workflow_dict[sample_name]['panel_name']):
+#             
+#             if re.search("SUCCESSFUL", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status']):
+#                 
+#                 initiate_IR_download(workflow_dict,sample_name)
+#                 
+#             elif re.search("FAIL", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE):
+#                 
+#                 print "WARNING: SOMATIC ANALYSIS %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_name'],
+#                                                                                                                   sample_name,
+#                                                                                                                   workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'])
+#             
+#             elif re.search("PENDING", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE):
+#                 
+#                 print "ERROR: Somatic analysis is not complete.  Skipping %s until ready..." % sample_name
+#                 try:
+#                     workflow_dict.pop(sample_name, None)
+#                 except KeyError:
+#                     print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+#                 except Exception, e:
+#                     print "ERROR: Unknown error: %s" % (str(e)) 
+#     
+#             else:
+#                 
+#                 print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'],
+#                                                                                        workflow_dict[sample_name]['somatic_analysis']['somatic_workflow'])
+#                 try:
+#                     workflow_dict.pop(sample_name, None)
+#                 except KeyError:
+#                     print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+#                 except Exception, e:
+#                     print "ERROR: Unknown error: %s" % (str(e))  
+#         
+#         else:
+#             print "ERROR: At this time, this workflow %s is not supported by the IR_heartbeat." % workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']
+#             if opts.force is False:
+#                 try:
+#                     print "ERROR: Removing the following case from queue: %s" % sample_name
+#                     workflow_dict.pop(sample_name, None)
+#                 except KeyError:
+#                     print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+#                 except Exception, e:
+#                     print "ERROR: Unknown error: %s" % (str(e))
+#             else:
+#                 print "WARNING: Processing %s because --force option invoked." % sample_name
+#                 initiate_IR_download(workflow_dict, sample_name)
         
 
 # Index BAMs in current working directory
 subprocess.call("for i in *.bam; do samtools index $i; done;", shell=True)
+
 
 # Remote extra log files and IonXpress barcoded BAMs
 for f1 in glob.glob('%s/VER*.log' % os.getcwd()):
@@ -1050,7 +1243,7 @@ if len(workflow_dict) > 0:
         if opts.verbose is True: pp.pprint(entry)
         try:
             es.indices.create(index='dna-seq', ignore=400)
-            if es.exists(index='dna-seq', doc_type='pipeline-analysis-overview-test', id=key):
+            if es.exists(index='dna-seq', doc_type='pipeline-analysis-overview-test', id=key) and opts.skip_es_submit is False:
                 print "ERROR: %s already exists in database...PASSING" % key
                 pass
             else:
@@ -1059,8 +1252,10 @@ if len(workflow_dict) > 0:
                     es.indices.refresh(index="dna-seq")
                     print "Was %s created in database?: %s" % (key, res['created'])
                 connect_to_mysql_and_load_qc_dict(key)
-                
-                run_pipeline()            
+                move_bams_to_base_directory_and_change_dir(key)
+                run_pipeline()
+                # return to higher level when pipeline has finished
+                os.chdir("..")     
          
         except Exception, e:
             print("Unknown error occurred")

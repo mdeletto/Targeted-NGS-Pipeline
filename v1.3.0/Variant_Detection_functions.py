@@ -74,8 +74,8 @@ def SnpSift_filter(vcf_in, SnpSift, BEDTOOLS_EXE, regex_filter, base_output, pro
                                %s subtract -a stdin -b %s.ionreporter.loh.vcf > %s.%s.vcf""" % (vcf_in,SnpSift,regex_filter,base_output,SnpSift,BEDTOOLS_EXE,base_output,base_output,program),shell=True)
         else:
             subprocess.call("""awk 'BEGIN { FS = "\t" } ; { if ($10!="." && $11!=".") print}' %s | \
-                               java -jar %s filter "%s" 2>> %s.snpsift.log | \
-                               java -jar %s varType - > %s.%s.vcf""" % (vcf_in,SnpSift,regex_filter,base_output,SnpSift,base_output,program),shell=True)
+                                java -jar %s varType - | \
+                               java -jar %s filter "%s" 2>> %s.snpsift.log > %s.%s.vcf""" % (vcf_in,SnpSift,SnpSift,regex_filter,base_output,base_output,program),shell=True)
         return "%s.%s.vcf" % (base_output, program)
     except:
         print "ERROR: Filtering of VCF input with SnpSift failed.  Aborting..."
@@ -175,19 +175,34 @@ def move_files_to_new_subdirectory(tumor_bam, normal_bam, base_output,galaxy_fla
     print "Moving files to new directory named %s to prepare for final spreadsheet processing..." % base_output
     try:
         #subprocess.call('/usr/lib/jvm/java-8-oracle/jre/bin/java -jar %s -f %s.varscan.json %s.ionreporter.no_cnv.json %s.ionreporter.cnv.vcf %s.ionreporter.tsv' % (EDDY,base_output,base_output,base_output,base_output),shell=True)
-        mkdir_p("%s/%s" %(os.getcwd(),base_output))
-        
-        if galaxy_flag is False:
-            mkdir_p("%s/%s/tmp" %(os.getcwd(),base_output))
-            subprocess.call('mv %s*tmp* %s/tmp/ 2>> /tmp/error' % (base_output,base_output),shell=True)
-            subprocess.call('mv %s*temp* %s/tmp/ 2>> /tmp/error' % (base_output,base_output),shell=True)           
+        if os.getcwd().split("/")[-1] == base_output:
 
-            mkdir_p("%s/%s/BAMs" %(os.getcwd(),base_output))
-            if re.search("Population", normal_bam, re.IGNORECASE):
-                subprocess.call('mv %s* %s/BAMs/ 2>> /tmp/error' % (tumor_bam, base_output),shell=True)
-            else:
-                subprocess.call('mv %s* %s* %s/BAMs/ 2>> /tmp/error' % (tumor_bam, normal_bam, base_output),shell=True)
-        subprocess.call('mv %s* %s/ 2>> /tmp/error' % (base_output,base_output),shell=True)
+            if galaxy_flag is False:
+                mkdir_p("%s/tmp" % os.getcwd())
+                subprocess.call('mv %s*tmp* tmp/ 2>> /tmp/error' % base_output, shell=True)
+                subprocess.call('mv %s*temp* tmp/ 2>> /tmp/error' % base_output, shell=True)           
+    
+                mkdir_p("%s/BAMs" % os.getcwd())
+                if re.search("Population", normal_bam, re.IGNORECASE):
+                    subprocess.call('mv %s* BAMs/ 2>> /tmp/error' % tumor_bam, shell=True)
+                else:
+                    subprocess.call('mv %s* %s* BAMs/ 2>> /tmp/error' % (tumor_bam, normal_bam),shell=True)
+            
+        else:
+            
+            mkdir_p("%s/%s" %(os.getcwd(),base_output))
+            
+            if galaxy_flag is False:
+                mkdir_p("%s/%s/tmp" %(os.getcwd(),base_output))
+                subprocess.call('mv %s*tmp* %s/tmp/ 2>> /tmp/error' % (base_output,base_output),shell=True)
+                subprocess.call('mv %s*temp* %s/tmp/ 2>> /tmp/error' % (base_output,base_output),shell=True)           
+    
+                mkdir_p("%s/%s/BAMs" %(os.getcwd(),base_output))
+                if re.search("Population", normal_bam, re.IGNORECASE):
+                    subprocess.call('mv %s* %s/BAMs/ 2>> /tmp/error' % (tumor_bam, base_output),shell=True)
+                else:
+                    subprocess.call('mv %s* %s* %s/BAMs/ 2>> /tmp/error' % (tumor_bam, normal_bam, base_output),shell=True)
+            subprocess.call('mv %s* %s/ 2>> /tmp/error' % (base_output,base_output),shell=True)
     except:
         print "ERROR: Failed to move files"
     try:
@@ -255,7 +270,7 @@ def pull_BAM_from_url(url,base_output,sample_type):
 def zip_files(base_output,galaxy_dir):
     try:
         os.chdir(galaxy_dir)
-        subprocess.call('zip -q %s.zip %s.ionreporter.cnv.vcf %s.ionreporter.somatic.json %s.ionreporter.loh.json %s.ionreporter.germline.json %s.ionreporter.tsv %s.mutect2.somatic.json %s.strelka.somatic.json %s.ionreporter.fusions.vcf' % (base_output,base_output,base_output,base_output,base_output,base_output,base_output,base_output,base_output),shell=True)
+        subprocess.call('zip -q %s.zip %s.ionreporter.cnv.vcf %s.ionreporter.somatic.json %s.ionreporter.loh.json %s.ionreporter.germline.json %s.ionreporter.tsv %s.mutect2.somatic.json %s.strelka.somatic.json %s.ionreporter.fusions.vcf %s.specimen.json' % (base_output,base_output,base_output,base_output,base_output,base_output,base_output,base_output,base_output,base_output),shell=True)
     except:
         print "ERROR: Could not create zip file for Downstream upload. Check to make sure all output files exist."
 
@@ -749,6 +764,11 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
                         except:
                             print "FAIL: Could not define 'requested_by'"
                             output_match['panel'] = ''
+                        try:
+                            output_match['panel_version'] = '1.0'
+                        except:
+                            print "FAIL: Could not define 'panel_version'"
+                            output_match['panel_version'] = '1.0'
                 else:
                     for necessary_header in necessary_headers:
                         if not necessary_header in entry.keys():
@@ -789,7 +809,11 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
                                 except:
                                     print "FAIL: Could not define 'requested_by'"
                                     output_match['panel'] = ''
-                                    
+                                try:
+                                    output_match['panel_version'] = '1.0'
+                                except:
+                                    print "FAIL: Could not define 'panel_version'"
+                                    output_match['panel_version'] = '1.0'
                                     
                             else:
                                 # Create default specimen.json file if CoPath # does not exist in spreadsheet
@@ -819,6 +843,11 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
                                     output_match['panel'] = panel
                                 except:
                                     print "FAIL: Could not define 'requested_by'"
+                                try:
+                                    output_match['panel_version'] = '1.0'
+                                except:
+                                    print "FAIL: Could not define 'panel_version'"
+                                    output_match['panel_version'] = '1.0'
     
         return output_match
     

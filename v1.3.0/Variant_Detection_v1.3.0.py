@@ -10,6 +10,7 @@ import urllib
 from Variant_Detection_functions import *
 
 
+
 #-------------------------------------------------------------------------------------------
 #----------------------------Command line parser and arguments------------------------------
 #-------------------------------------------------------------------------------------------
@@ -19,7 +20,7 @@ vers="1.3.0"
 
 parser = optparse.OptionParser(description=desc,version=vers)
 
-# GENERAL OPTIONS
+# GENERAL OPTIONS    
 
 parser.add_option('--disable_filtering', help="""Enable consequential filtering for VCFs.  This does not apply to hard filters like read depth (these will be automatically applied to remove false positives).""", dest='filter_disabled', action='store_true',default=False)
 parser.add_option('-c', help="Base output name for files.  If a copath ID exists, please use this as the base output name.", dest='base_output', action='store')
@@ -426,6 +427,7 @@ def main():
                                         ["mutect2.somatic",
                                          """((GEN[0].AF >= 0.05) 
                                              & (GEN[0].AD[1] >= 2))
+                                             & ( (VARTYPE !~ 'DEL') & (VARTYPE !~ 'INS') ) )
                                              | (FILTER = 'PASS')""",
                                         mutect2_unfiltered_vcf],
          
@@ -463,7 +465,8 @@ def main():
                                              """((GEN[1].AF <= 0.05) 
                                                  & (GEN[0].AF >= 0.05) 
                                                  & (GEN[1].AD[0] >= 5) 
-                                                 & (GEN[0].AD[1] >= 2))
+                                                 & (GEN[0].AD[1] >= 2)
+                                                 & ( (VARTYPE !~ 'DEL') & (VARTYPE !~ 'INS') ) )
                                                  | (FILTER = 'PASS')""",
                                             mutect2_unfiltered_vcf],
              
@@ -547,7 +550,12 @@ def main():
         for file in sorted(os.listdir("%s" % opts.output_directory)):
             html_out.write("<a href='%s'>%s</a><br>" % (file,file))            
     else:
-        opts.output_directory = opts.base_output
+        
+        if opts.base_output == os.getcwd().split("/")[-1]:
+            opts.output_directory = "."
+        else:
+            opts.output_directory = opts.base_output
+            
         zip_files(opts.base_output,opts.output_directory)
 
 if __name__ == "__main__":
