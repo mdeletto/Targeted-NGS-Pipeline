@@ -605,8 +605,8 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
     
     def check_if_tpl_spreadsheet_exists():
         """Checks if TPL spreadsheet is mounted and exists."""
-        if os.path.isfile("/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/Tumor Profiling Stats 2016.xlsx"):
-            return "/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/Tumor Profiling Stats 2016.xlsx"
+        if os.path.isfile("/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/2017 TP Stats.xlsx"):
+            return "/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/2017 TP Stats.xlsx"
         else:
             print "WARNING: Could not find the TP spreadsheet.  Attempting to troubleshoot the error..."
             if os.path.isdir("/media/Tumor_Profiling_N_Drive/"):
@@ -861,7 +861,6 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
     # Initialize defaultdict
     sheet_entries = defaultdict(list)
     # Pop sheet_names that are incompatible with pipeline
-    sheet_names.remove("Research")
     sheet_names.remove("TaqMan Cases")
     # Create a dict of entries from each sheet
     for sheet_name in sheet_names:

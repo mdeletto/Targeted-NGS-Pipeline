@@ -458,7 +458,7 @@ def connect_to_IR_server_and_run_command(remote_command):
     #print "returning immediately"
     #return stdout
     
-    timeout = 60
+    timeout = 120
     endtime = time.time() + timeout
     while not stderr.channel.eof_received:
         time.sleep(1)
@@ -847,7 +847,7 @@ for name in names:
                         qc_dict['expr_control'] = defaultdict(dict)
                         for line in remote_command_output:
                             if re.search("SVTYPE=ExprControl", line):
-                                gene_match = re.search("GENE_NAME=(\w+?);", line)
+                                gene_match = re.search("GENE_NAME=(.+?);", line)
                                 gene = gene_match.group(1)
                                 read_count_match = re.search("READ_COUNT=(\d+?);", line)
                                 read_count = int(read_count_match.group(1))
@@ -900,12 +900,10 @@ if opts.verbose is True: pp.pprint(json.loads(json.dumps(workflow_dict)))
 
 def IR_analysis_control():
 
-
-        
         required_analyses = {
                              'Oncomine Comprehensive' : {
                                                          'somatic_analysis' : 'required',
-                                                         'germline_analysis' : 'required',
+                                                         'germline_analysis' : 'optional',
                                                          'fusion_analysis' : 'optional'
                                                          },
                              
@@ -953,8 +951,11 @@ def IR_analysis_control():
         for required_analysis in required_analyses[detected_panel_name]:
             if required_analyses[detected_panel_name][required_analysis] == 'required':
                 if bool(workflow_dict[sample_name][required_analysis]['%s_name' % required_analysis]) is False:
-                    print "ERROR: %s required for %s" % (required_analysis, detected_panel_name)
-                    workflow_dict.pop(sample_name, None)
+                    if re.search("QC", sample_name):
+                        initiate_IR_download(workflow_dict, sample_name)
+                    else:
+                        print "ERROR: %s required for %s" % (required_analysis, detected_panel_name)
+                        workflow_dict.pop(sample_name, None)
                 else:
                     if re.search("SUCCESSFUL", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis]):
                         
