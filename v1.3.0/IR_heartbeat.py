@@ -21,8 +21,6 @@ import MySQLdb
 from collections import defaultdict
 from elasticsearch import Elasticsearch
 
-os.chdir("/home/michael/Cases/Clinical/Pending")
-
 global opts
 
 desc="""IR_heartbeat.py acts as a gateway for initiating the bioinformatics analyses (variant calling, annotation, and other QC) for IonTorrent data.  The script contacts the IR server, pulls in necessary info, initiates the downstream bioinformatics analyses, and logs the activity in Elasticsearch."""
@@ -44,20 +42,14 @@ group.add_option("--enable-manual-control", help="Manual control over samples en
 group.add_option("-v", help="verbose <[%default]>", dest='verbose',action='store_true',default=False)
 parser.add_option_group(group)
 
-# group = optparse.OptionGroup(parser, "Single mode",
-#                     "Downloads VCF for a single analysis")
-#  
-# group.add_option('--analysis_name', help="IR analysis name", dest='input_analysis_name', action='store')
-# parser.add_option_group(group)
-
 (opts, args) = parser.parse_args()
 
 ####################################
 #---PRESET ENVIRONMENT VARIABLES---#
 ####################################
 
-WORKING_DIRECTORY = "/home/michael/Cases/Clinical/Pending"
-#WORKING_DIRECTORY = "/home/michael/Development/IR_heartbeat"
+WORKING_DIRECTORY = "/var/www/TPL/ftp/targetedNGSPipeline/"
+os.chdir(WORKING_DIRECTORY)
 
 es = Elasticsearch()
 
@@ -239,6 +231,8 @@ def connect_to_database(database_name):
 def download_bams_from_IR(IR_download_link,IR_download_dir,workflow_dict_key):
     # Downloads BAMs from IonReporter by downloading .rrs files, which contain samples definitions and filepaths on the IR server
     # Samtools is also called to merge BAMs (if more than one BAM exists for a sample) and index BAMs
+    
+    print os.getcwd()
     
     sample_name = workflow_dict_key
     bam_pipeline_flags = defaultdict(lambda: None) # to be passed back via return, to be used for pipeline automation
@@ -457,20 +451,33 @@ def connect_to_IR_server_and_run_command(remote_command):
     exit_status = stdout.channel.recv_exit_status()
     #print "returning immediately"
     #return stdout
-    
-    timeout = 120
+
+    timeout = 240
     endtime = time.time() + timeout
     while not stderr.channel.eof_received:
         time.sleep(1)
         if time.time() > endtime:
             stderr.channel.close()
+            print "WARNING: Fusion VCF EOF not received.  Time limit exceeded...breaking..."
             break
-    
+     
     if stderr.read() == "":
         return stdout
     else:
         return stdout
-        #sys.exit("ERROR: Failed to execute ssh command: %s\nERROR: %s" % (remote_command, stderr))
+
+def connect_to_IR_server_and_grab_file_contents(filename):
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect('10.80.157.179', username="ionadmin")
+    
+    ftp = client.open_sftp()
+    _file = ftp.file(filename, 'r', -1)
+    data = _file.read().split("\n")
+    
+    return data
+    
+
 
 def perform_qc_check(workflow_dict):
     for basename in workflow_dict.keys():
@@ -668,6 +675,8 @@ def run_pipeline():
         # For QC samples, we don't want any calls to be filtered based on consequence
         if re.search("QC", key):
             command += " --disable_filtering"
+            if re.search("TFNA", str(workflow_dict[key]['panel_name'])):
+                command += " --ionreporter only"
      
         if opts.pipeline_arguments is not None:
             command += str(opts.pipeline_arguments)
@@ -677,7 +686,7 @@ def run_pipeline():
         subprocess.call(command, shell=True)
 
 def move_bams_to_base_directory_and_change_dir(base_output):
-    """Create a subdirectory for each case, move BAMs into it, and cd into the dir.
+    """Create a subdirectory for each case, move BAMs into it, cd into the dir, and index BAMs.
     This allows us to make sure files are specific to the case and standard files like "log.txt" don't get moved from another analysis.
     """
     try:
@@ -685,10 +694,169 @@ def move_bams_to_base_directory_and_change_dir(base_output):
             os.makedirs(base_output)
         subprocess.call("mv %s*.bam* %s/" % (base_output, base_output),shell=True)
         os.chdir(base_output)
+        # Index BAMs in current working directory
+        subprocess.call("for i in *.bam; do samtools index $i; done;", shell=True)
     except Exception, e:
         print "ERROR: %s" % str(e)
         print "ERROR: Could not create case directory, move BAMs, and cd into that directory"
         
+######################################
+#---PING IR AND DOWNLOAD BAM FILES---#
+######################################
+
+def IR_analysis_control():
+
+        required_analyses = {
+                             'Oncomine Comprehensive' : {
+                                                         'somatic_analysis' : 'required',
+                                                         'germline_analysis' : 'optional',
+                                                         'fusion_analysis' : 'optional'
+                                                         },
+                             
+                             'Comprehensive Cancer Panel' : {
+                                                             'somatic_analysis' : 'required',
+                                                             'germline_analysis' : 'required',
+                                                             'fusion_analysis' : 'N/A'               
+                                                             },
+                             
+                             'Hotspot Mutation Panel' : {
+                                                        'somatic_analysis' : 'required',
+                                                        'germline_analysis' : 'optional',
+                                                        'fusion_analysis' : 'N/A'  
+                                                         },
+                             
+                             'TFNA' : {
+                                        'somatic_analysis' : 'required',
+                                        'germline_analysis' : 'optional',
+                                        'fusion_analysis' : 'required'  
+                                       }
+                             }
+
+        for panel_name in required_analyses:
+            if re.search(panel_name, str(workflow_dict[sample_name]['somatic_analysis']['somatic_workflow'])):
+                detected_panel_name = panel_name
+            else:
+                pass
+
+        try:
+            detected_panel_name = detected_panel_name
+        except NameError:
+            if opts.force is True:
+                print "WARNING: Panel name could not be autodetected.  Attempting to force this panel through the pipeline, since --force option was invoked."
+                detected_panel_name = "UNK"
+                required_analyses.update({"UNK" : {
+                                                    'somatic_analysis' : 'required',
+                                                    'germline_analysis' : 'optional',
+                                                    'fusion_analysis' : 'optional'  
+                                                   }
+                                           })
+            else:
+                print "ERROR: Unable to determine panel name.\nERROR: Somatic workflow required for the IR_heartbeat to begin"
+                return True
+        
+        for required_analysis in required_analyses[detected_panel_name]:
+            if required_analyses[detected_panel_name][required_analysis] == 'required':
+                if bool(workflow_dict[sample_name][required_analysis]['%s_name' % required_analysis]) is False:
+                    if re.search("QC", sample_name):
+                        pass
+                    else:
+                        print "ERROR: %s required for %s" % (required_analysis, detected_panel_name)
+                        workflow_dict.pop(sample_name, None)
+                else:
+                    if re.search("SUCCESSFUL", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis]):
+                        
+                        if required_analysis == 'somatic_analysis':
+                            
+                            pass
+                        
+                    elif re.search("FAIL", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis]):
+                        
+                        print "WARNING: %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name][required_analysis]['%s_name' % required_analysis],
+                                                                                                    sample_name,
+                                                                                                    workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis])
+                        
+                        
+                        
+                    elif re.search("PENDING", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis], re.IGNORECASE):
+                        
+                        print "ERROR: %s is not complete.  Skipping %s until ready..." % (required_analysis, sample_name)
+                        try:
+                            workflow_dict.pop(sample_name, None)
+                        except KeyError:
+                            print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+                        except Exception, e:
+                            print "ERROR: Unknown error: %s" % (str(e)) 
+            
+                    else:
+                        
+                        print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis],
+                                                                                               workflow_dict[sample_name][required_analysis]['%s_workflow' % required_analysis.split("_")[0]])
+                        try:
+                            workflow_dict.pop(sample_name, None)
+                        except KeyError:
+                            print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+                        except Exception, e:
+                            print "ERROR: Unknown error: %s" % (str(e))
+                            
+            elif required_analyses[detected_panel_name][required_analysis] == 'optional':
+                if bool(workflow_dict[sample_name][required_analysis]['%s_name' % required_analysis]) is False:
+                    print "WARNING: %s not detected for %s" % (required_analysis, detected_panel_name)
+                else:
+                    if re.search("SUCCESSFUL", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis]):
+                        
+                        if required_analysis == 'somatic_analysis':
+                            
+                            pass
+                        
+                    elif re.search("FAIL", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis]):
+                        
+                        "WARNING: %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name][required_analysis]['%s_name' % required_analysis],
+                                                                                                    sample_name,
+                                                                                                    workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis])
+                        
+                        
+                        
+                    elif re.search("PENDING", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis], re.IGNORECASE):
+                        
+                        print "ERROR: %s is not complete.  Skipping %s until ready..." % (required_analysis, sample_name)
+                        try:
+                            workflow_dict.pop(sample_name, None)
+                        except KeyError:
+                            print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+                        except Exception, e:
+                            print "ERROR: Unknown error: %s" % (str(e)) 
+            
+                    else:
+                        
+                        print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis],
+                                                                                               workflow_dict[sample_name][required_analysis]['%s_workflow' % required_analysis.split("_")[0]])
+                        try:
+                            workflow_dict.pop(sample_name, None)
+                        except KeyError:
+                            print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
+                        except Exception, e:
+                            print "ERROR: Unknown error: %s" % (str(e))
+
+            else:
+                
+                pass
+
+def define_user_abbreviation(analysis_dict):
+    """Takes the IR analysis dict and abbreviates the 'started_by' field.
+    """
+    
+    if re.search("Mike", str(analysis_dict['started_by'])):
+        user_abbreviation = "MD"
+    elif re.search("Jay", str(analysis_dict['started_by'])):
+        user_abbreviation = "JW"
+    elif re.search("Sand", str(analysis_dict['started_by'])):
+        user_abbreviation = "SC"
+    elif re.search("Jen", str(analysis_dict['started_by'])):
+        user_abbreviation = "JH"
+    else:
+        user_abbreviation = "Default"
+    
+    return user_abbreviation
 
 #####################################
 #---DYNAMIC ENVIRONMENT VARIABLES---#
@@ -725,13 +893,14 @@ pp = pprint.PrettyPrinter(indent=4)
 
 # Cycle through unique identifiers and map to different analyses in the server
 for name in names:
+    header = "SEARCHING IR SERVER FOR ANALYSES RELATED TO: %s" % name
+    print "-" * len(header)
+    print header
+    print "-" * len(header)
+    
     if es.exists(index='dna-seq', doc_type='pipeline-analysis-overview-test', id=name) and opts.skip_es_submit is False:
         print "ERROR: %s exists in database...passing..." % name
     else:
-        header = "SEARCHING IR SERVER FOR ANALYSES RELATED TO: %s" % name
-        print "-" * len(header)
-        print header
-        print "-" * len(header)
         
         repeat_flag = False
         workflow_nested_dict, somatic_dict, germline_dict, fusion_dict, qc_dict = (defaultdict(lambda: None) for i in range(5))
@@ -752,6 +921,11 @@ for name in names:
                     
                     if re.search("SOMATIC",analysis['name'],re.IGNORECASE) or re.search("tumor-normal",analysis['workflow'], re.IGNORECASE):
                         print "Case %s has somatic analysis = %s" % (name,analysis['name'])
+                        
+                        # define user
+                        workflow_nested_dict['user_full'] = analysis['started_by']
+                        user = define_user_abbreviation(analysis)
+                        workflow_nested_dict['user_abbrev'] = user
                         
                         # Get base filepath on IR server
                         somatic_base_filepath = determine_IR_basename_filepath(analysis['name'], analysis['id'], opts.url, IR_API_KEY)
@@ -841,10 +1015,11 @@ for name in names:
                         somatic_base_filepath = determine_IR_basename_filepath(analysis['name'], analysis['id'], opts.url, IR_API_KEY)
                         trash, dirpath = somatic_base_filepath.split("filepath=")
                         dirpath = "/".join(dirpath.split("/")[:-1])
-                        remote_command_output = connect_to_IR_server_and_run_command("cat %s/outputs/RNACountsActor-00/fusions.vcf" % dirpath)
+                        remote_command_output = connect_to_IR_server_and_grab_file_contents("%s/outputs/RNACountsActor-00/fusions.vcf" % dirpath)
                         # Extract FUSION QC info
                         qc_dict['expr_control_sum'] = 0
                         qc_dict['expr_control'] = defaultdict(dict)
+
                         for line in remote_command_output:
                             if re.search("SVTYPE=ExprControl", line):
                                 gene_match = re.search("GENE_NAME=(.+?);", line)
@@ -853,7 +1028,6 @@ for name in names:
                                 read_count = int(read_count_match.group(1))
                                 qc_dict['expr_control'].update({gene : read_count})
                                 qc_dict['expr_control_sum'] += int(read_count)
-
                             if re.search("##TotalMappedFusionPanelReads", line):
                                 match = re.search("##TotalMappedFusionPanelReads=(.*)", line)
                                 total_mapped_fusion_reads = int(match.group(1))
@@ -894,146 +1068,7 @@ workflow_dict = perform_qc_check(workflow_dict)
 # Print main dictionary for debugging purposes
 if opts.verbose is True: pp.pprint(json.loads(json.dumps(workflow_dict)))
 
-######################################
-#---PING IR AND DOWNLOAD BAM FILES---#
-######################################
 
-def IR_analysis_control():
-
-        required_analyses = {
-                             'Oncomine Comprehensive' : {
-                                                         'somatic_analysis' : 'required',
-                                                         'germline_analysis' : 'optional',
-                                                         'fusion_analysis' : 'optional'
-                                                         },
-                             
-                             'Comprehensive Cancer Panel' : {
-                                                             'somatic_analysis' : 'required',
-                                                             'germline_analysis' : 'required',
-                                                             'fusion_analysis' : 'N/A'               
-                                                             },
-                             
-                             'Hotspot Mutation Panel' : {
-                                                        'somatic_analysis' : 'required',
-                                                        'germline_analysis' : 'optional',
-                                                        'fusion_analysis' : 'N/A'  
-                                                         },
-                             
-                             'TFNA' : {
-                                        'somatic_analysis' : 'required',
-                                        'germline_analysis' : 'optional',
-                                        'fusion_analysis' : 'required'  
-                                       }
-                             }
-
-        for panel_name in required_analyses:
-            if re.search(panel_name, str(workflow_dict[sample_name]['somatic_analysis']['somatic_workflow'])):
-                detected_panel_name = panel_name
-            else:
-                pass
-
-        try:
-            detected_panel_name = detected_panel_name
-        except NameError:
-            if opts.force is True:
-                print "WARNING: Panel name could not be autodetected.  Attempting to force this panel through the pipeline, since --force option was invoked."
-                detected_panel_name = "UNK"
-                required_analyses.update({"UNK" : {
-                                                    'somatic_analysis' : 'required',
-                                                    'germline_analysis' : 'optional',
-                                                    'fusion_analysis' : 'optional'  
-                                                   }
-                                           })
-            else:
-                print "ERROR: Unable to determine panel name.\nERROR: Somatic workflow required for the IR_heartbeat to begin"
-                workflow_dict.pop(sample_name)
-        
-        for required_analysis in required_analyses[detected_panel_name]:
-            if required_analyses[detected_panel_name][required_analysis] == 'required':
-                if bool(workflow_dict[sample_name][required_analysis]['%s_name' % required_analysis]) is False:
-                    if re.search("QC", sample_name):
-                        initiate_IR_download(workflow_dict, sample_name)
-                    else:
-                        print "ERROR: %s required for %s" % (required_analysis, detected_panel_name)
-                        workflow_dict.pop(sample_name, None)
-                else:
-                    if re.search("SUCCESSFUL", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis]):
-                        
-                        if required_analysis == 'somatic_analysis':
-                            
-                            initiate_IR_download(workflow_dict, sample_name)
-                        
-                    elif re.search("FAIL", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis]):
-                        
-                        "WARNING: %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name][required_analysis]['%s_name' % required_analysis],
-                                                                                                    sample_name,
-                                                                                                    workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis])
-                        
-                        
-                        
-                    elif re.search("PENDING", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis], re.IGNORECASE):
-                        
-                        print "ERROR: %s is not complete.  Skipping %s until ready..." % (required_analysis, sample_name)
-                        try:
-                            workflow_dict.pop(sample_name, None)
-                        except KeyError:
-                            print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-                        except Exception, e:
-                            print "ERROR: Unknown error: %s" % (str(e)) 
-            
-                    else:
-                        
-                        print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis],
-                                                                                               workflow_dict[sample_name][required_analysis]['%s_workflow' % required_analysis.split("_")[0]])
-                        try:
-                            workflow_dict.pop(sample_name, None)
-                        except KeyError:
-                            print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-                        except Exception, e:
-                            print "ERROR: Unknown error: %s" % (str(e))
-                            
-            elif required_analyses[detected_panel_name][required_analysis] == 'optional':
-                if bool(workflow_dict[sample_name][required_analysis]['%s_name' % required_analysis]) is False:
-                    print "WARNING: %s not detected for %s" % (required_analysis, detected_panel_name)
-                else:
-                    if re.search("SUCCESSFUL", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis]):
-                        
-                        if required_analysis == 'somatic_analysis':
-                            
-                            initiate_IR_download(workflow_dict, sample_name)
-                        
-                    elif re.search("FAIL", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis]):
-                        
-                        "WARNING: %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name][required_analysis]['%s_name' % required_analysis],
-                                                                                                    sample_name,
-                                                                                                    workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis])
-                        
-                        
-                        
-                    elif re.search("PENDING", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis], re.IGNORECASE):
-                        
-                        print "ERROR: %s is not complete.  Skipping %s until ready..." % (required_analysis, sample_name)
-                        try:
-                            workflow_dict.pop(sample_name, None)
-                        except KeyError:
-                            print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-                        except Exception, e:
-                            print "ERROR: Unknown error: %s" % (str(e)) 
-            
-                    else:
-                        
-                        print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name][required_analysis]['%s_status' % required_analysis],
-                                                                                               workflow_dict[sample_name][required_analysis]['%s_workflow' % required_analysis.split("_")[0]])
-                        try:
-                            workflow_dict.pop(sample_name, None)
-                        except KeyError:
-                            print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-                        except Exception, e:
-                            print "ERROR: Unknown error: %s" % (str(e))
-
-            else:
-                
-                pass
 
 
 
@@ -1050,182 +1085,18 @@ for sample_name in workflow_dict.keys():
     counter += 1
     if es.exists(index='dna-seq', doc_type='pipeline-analysis-overview-test', id=sample_name) and opts.skip_es_submit is False:
         print "ERROR: %s exists in database...passing..." % sample_name
-    else:
-        
-        IR_analysis_control()
-        
-#         if re.search("Oncomine Comprehensive",workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']):
-#             
-#             if re.search("SUCCESSFUL", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status']):
-#                 
-# #                 if bool(workflow_dict[sample_name]['germline_analysis']['germline_analysis_name']) is False:
-# #                     
-# #                     print "WARNING: Germline analysis not performed"
-# #                     
-# #                 elif bool(workflow_dict[sample_name]['germline_analysis']['germline_analysis_name']) is True:
-# #                     
-# #                     if re.search("SUCCESSFUL",workflow_dict[sample_name]['germline_analysis']['germline_analysis_status']):
-# #                     
-# #                         initiate_IR_download(workflow_dict,sample_name)
-# #                         
-# #                     elif re.search("FAIL", workflow_dict[sample_name]['germline_analysis']['germline_analysis_status'], re.IGNORECASE):
-# #                         
-# #                         print "WARNING: SOMATIC ANALYSIS %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name]['germline_analysis']['germline_analysis_name'],
-# #                                                                                                                           sample_name,
-# #                                                                                                                           workflow_dict[sample_name]['germline_analysis']['germline_analysis_status'])
-# #                     
-# #                     elif re.search("PENDING", workflow_dict[sample_name]['germline_analysis']['germline_analysis_status'], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name]['germline_analysis']['germline_analysis_status'], re.IGNORECASE):
-# #                         
-# #                         print "ERROR: Somatic analysis is not complete.  Skipping %s until ready..." % sample_name
-# #                         try:
-# #                             workflow_dict.pop(sample_name, None)
-# #                         except KeyError:
-# #                             print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-# #                         except Exception, e:
-# #                             print "ERROR: Unknown error: %s" % (str(e)) 
-# # 
-# #                     else:
-# #                         
-# #                         print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name]['germline_analysis']['germline_analysis_status'],
-# #                                                                                                workflow_dict[sample_name]['germline_analysis']['germline_workflow'])
-# #                         try:
-# #                             workflow_dict.pop(sample_name, None)
-# #                         except KeyError:
-# #                             print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-# #                         except Exception, e:
-# #                             print "ERROR: Unknown error: %s" % (str(e)) 
-#             
-#                 if bool(workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_name']) is False:
-#                     
-#                     print "WARNING: Proceeding as DNA only OCP..."
-#                     initiate_IR_download(workflow_dict,sample_name)
-#                 
-#                 elif bool(workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_name']) is True:
-#                     
-#                     if re.search("SUCCESSFUL",workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status']):
-#                     
-#                         initiate_IR_download(workflow_dict,sample_name)
-#                         
-#                     elif re.search("FAIL", workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'], re.IGNORECASE):
-#                         
-#                         print "WARNING: SOMATIC ANALYSIS %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_name'],
-#                                                                                                                           sample_name,
-#                                                                                                                           workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'])
-#                     
-#                     elif re.search("PENDING", workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'], re.IGNORECASE):
-#                         
-#                         print "ERROR: Somatic analysis is not complete.  Skipping %s until ready..." % sample_name
-#                         try:
-#                             workflow_dict.pop(sample_name, None)
-#                         except KeyError:
-#                             print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-#                         except Exception, e:
-#                             print "ERROR: Unknown error: %s" % (str(e)) 
-# 
-#                     else:
-#                         
-#                         print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name]['fusion_analysis']['fusion_analysis_status'],
-#                                                                                                workflow_dict[sample_name]['fusion_analysis']['fusion_workflow'])
-#                         try:
-#                             workflow_dict.pop(sample_name, None)
-#                         except KeyError:
-#                             print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-#                         except Exception, e:
-#                             print "ERROR: Unknown error: %s" % (str(e)) 
-#     
-#             elif re.search("FAIL", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE):
-#                 
-#                 print "WARNING: SOMATIC ANALYSIS %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_name'],
-#                                                                                                                   sample_name,
-#                                                                                                                   workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'])
-#             
-#             elif re.search("PENDING", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE):
-#                 
-#                 print "ERROR: Somatic analysis is not complete.  Skipping %s until ready..." % sample_name
-#                 try:
-#                     workflow_dict.pop(sample_name, None)
-#                 except KeyError:
-#                     print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-#                 except Exception, e:
-#                     print "ERROR: Unknown error: %s" % (str(e)) 
-#     
-#             else:
-#                 
-#                 print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'],
-#                                                                                        workflow_dict[sample_name]['somatic_analysis']['somatic_workflow'])
-#                 try:
-#                     workflow_dict.pop(sample_name, None)
-#                 except KeyError:
-#                     print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-#                 except Exception, e:
-#                     print "ERROR: Unknown error: %s" % (str(e)) 
-#     
-#         elif re.search("Comprehensive Cancer Panel", workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']) or re.search("HSM", workflow_dict[sample_name]['panel_name']) or re.search("TFNA", workflow_dict[sample_name]['panel_name']):
-#             
-#             if re.search("SUCCESSFUL", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status']):
-#                 
-#                 initiate_IR_download(workflow_dict,sample_name)
-#                 
-#             elif re.search("FAIL", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE):
-#                 
-#                 print "WARNING: SOMATIC ANALYSIS %s FOR %s HAS %s STATUS.  AUTOMATED WORKFLOW WILL NOT BE RUN!" % (workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_name'],
-#                                                                                                                   sample_name,
-#                                                                                                                   workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'])
-#             
-#             elif re.search("PENDING", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE) or re.search("RUNNING", workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'], re.IGNORECASE):
-#                 
-#                 print "ERROR: Somatic analysis is not complete.  Skipping %s until ready..." % sample_name
-#                 try:
-#                     workflow_dict.pop(sample_name, None)
-#                 except KeyError:
-#                     print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-#                 except Exception, e:
-#                     print "ERROR: Unknown error: %s" % (str(e)) 
-#     
-#             else:
-#                 
-#                 print "ERROR: Unknown status (%s) for %s.  Skipping this sample..." % (workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_status'],
-#                                                                                        workflow_dict[sample_name]['somatic_analysis']['somatic_workflow'])
-#                 try:
-#                     workflow_dict.pop(sample_name, None)
-#                 except KeyError:
-#                     print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-#                 except Exception, e:
-#                     print "ERROR: Unknown error: %s" % (str(e))  
-#         
-#         else:
-#             print "ERROR: At this time, this workflow %s is not supported by the IR_heartbeat." % workflow_dict[sample_name]['somatic_analysis']['somatic_workflow']
-#             if opts.force is False:
-#                 try:
-#                     print "ERROR: Removing the following case from queue: %s" % sample_name
-#                     workflow_dict.pop(sample_name, None)
-#                 except KeyError:
-#                     print "WARNING: %s is not in list of samples.  Did we remove it already?" % sample_name
-#                 except Exception, e:
-#                     print "ERROR: Unknown error: %s" % (str(e))
-#             else:
-#                 print "WARNING: Processing %s because --force option invoked." % sample_name
-#                 initiate_IR_download(workflow_dict, sample_name)
-        
+        workflow_dict[sample_name]['IR_heartbeat_error'] = True
+    else:  
+        workflow_dict[sample_name]['IR_heartbeat_error'] = IR_analysis_control()
 
-# Index BAMs in current working directory
-subprocess.call("for i in *.bam; do samtools index $i; done;", shell=True)
+for sample_name, v1 in workflow_dict.items():
+    if isinstance(v1, dict):
+        for k2,v2 in v1.items():
+            if k2 == 'IR_heartbeat_error' and v2 is True:
+                del workflow_dict[sample_name] 
 
 
-# Remote extra log files and IonXpress barcoded BAMs
-for f1 in glob.glob('%s/VER*.log' % os.getcwd()):
-    os.remove(f1)
-    
-for f1 in glob.glob('%s/IonXpress*.bam' % os.getcwd()):
-    os.remove(f1)
 
-for f1 in glob.glob('%s/*.rrs' % os.getcwd()):
-    os.remove(f1)
-
-# If download_bams_only option is enabled, exit without executing pipeline.
-# Indexed BAMs should be in the current working directory.
-if opts.bams_only is True:
-    sys.exit("WARNING: --download_bams_only option set to %. Exiting without executing pipeline..." % opts.bams_only)
 
 
 ################################################
@@ -1239,31 +1110,73 @@ if len(workflow_dict) > 0:
     cursor = cnx.cursor()
     
     for key in workflow_dict.keys():
-        entry = json.dumps(workflow_dict[key])
-        entry = json.loads(entry)
-        if opts.verbose is True: pp.pprint(entry)
-        try:
-            es.indices.create(index='dna-seq', ignore=400)
-            if es.exists(index='dna-seq', doc_type='pipeline-analysis-overview-test', id=key) and opts.skip_es_submit is False:
-                print "ERROR: %s already exists in database...PASSING" % key
-                pass
-            else:
-                if opts.skip_es_submit is False:
-                    res = es.create(index='dna-seq', doc_type='pipeline-analysis-overview-test', body=entry, id=key)
-                    es.indices.refresh(index="dna-seq")
-                    print "Was %s created in database?: %s" % (key, res['created'])
-                connect_to_mysql_and_load_qc_dict(key)
-                move_bams_to_base_directory_and_change_dir(key)
-                run_pipeline()
-                # return to higher level when pipeline has finished
-                os.chdir("..")     
-         
-        except Exception, e:
-            print("Unknown error occurred")
-            print(e)
-            sys.exit(1)
-
-#     cnx.close()
-
+        
+        # Create user subdirectory if it doesn't exist
+        if not os.path.exists(WORKING_DIRECTORY+workflow_dict[key]['user_abbrev']):
+            os.makedirs(workflow_dict[key]['user_abbrev'])
+        
+        # Change directory to user directory
+        os.chdir(workflow_dict[key]['user_abbrev'])
+        print os.getcwd()
+        # Download BAMs
+        initiate_IR_download(workflow_dict, key)
+        
+        # If download_bams_only option is enabled, exit without executing pipeline.
+        # Indexed BAMs should be in the current working directory.
+        if opts.bams_only is True:
+            print "WARNING: --download_bams_only option enabled.  Pipeline execution and database checks will not be performed."
+            continue
+        else:
+    
+            # JSON serialize our workflow_dict    
+            entry = json.dumps(workflow_dict[key])
+            entry = json.loads(entry)
+            
+            # Print each entry if verbose==True
+            if opts.verbose is True: pp.pprint(entry)
+            
+            
+            try:
+                # Create ES Index
+                es.indices.create(index='dna-seq', ignore=400)
+                # If index exists for a sample, we pass the sample
+                # Unless --skip_es_submit is enabled, then we don't bother checking
+                if es.exists(index='dna-seq', doc_type='pipeline-analysis-overview-test', id=key) and opts.skip_es_submit is False:
+                    print "ERROR: %s already exists in database...PASSING" % key
+                    pass
+                else:
+                    if opts.skip_es_submit is False:
+                        res = es.create(index='dna-seq', doc_type='pipeline-analysis-overview-test', body=entry, id=key)
+                        es.indices.refresh(index="dna-seq")
+                        print "Was %s created in database?: %s" % (key, res['created'])
+                    
+                    # Load entry into mysql TPTracker interface
+                    connect_to_mysql_and_load_qc_dict(key)
+                    
+                    # Move BAMs to sample levelpr directory, rather than user directory
+                    move_bams_to_base_directory_and_change_dir(key)
+                    
+                    # Run NGSPipeline
+                    run_pipeline()
+                    
+                    # Return to higher level when pipeline has finished
+                
+    
+                os.chdir(WORKING_DIRECTORY)
+    
+    # Remote extra log files and IonXpress barcoded BAMs
+#     files_to_delete = ['%s/VER*.log' % os.getcwd(),
+#                        '%s/IonXpress*.bam' % os.getcwd(),
+#                        '%s/*.rrs' % os.getcwd()
+#                        ]
+# 
+#     for filetype in files_to_delete:
+#         for file in glob.glob(filetype):
+#             os.remove(file)
+             
+            except Exception, e:
+                print("Unknown error occurred")
+                print(e)
+                sys.exit(1)
       
 # mode = command_line_parsing(opts)

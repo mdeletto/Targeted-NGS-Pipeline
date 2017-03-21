@@ -73,7 +73,7 @@ def SnpSift_filter(vcf_in, SnpSift, BEDTOOLS_EXE, regex_filter, base_output, pro
                                java -jar %s varType - | \
                                %s subtract -a stdin -b %s.ionreporter.loh.vcf > %s.%s.vcf""" % (vcf_in,SnpSift,regex_filter,base_output,SnpSift,BEDTOOLS_EXE,base_output,base_output,program),shell=True)
         else:
-            subprocess.call("""awk 'BEGIN { FS = "\t" } ; { if ($10!="." && $11!=".") print}' %s | \
+            subprocess.call("""awk 'BEGIN { FS = "\t" } ; { if ($10!=".") print}' %s | \
                                 java -jar %s varType - | \
                                java -jar %s filter "%s" 2>> %s.snpsift.log > %s.%s.vcf""" % (vcf_in,SnpSift,SnpSift,regex_filter,base_output,base_output,program),shell=True)
         return "%s.%s.vcf" % (base_output, program)
@@ -642,11 +642,17 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
                         break
                 else:
                     for _cell in row:
-                        if _cell.value is None:
+                        if _cell.value is None or _cell.value == "":
                             break
                         else:
                             max_column = _cell.column
                 row_counter += 1
+    
+            try:
+                max_column
+            except NameError:
+                max_column = sheet_obj.max_column
+                
     
             return [max_column, max_row]
         
@@ -688,6 +694,7 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
             return [test_string, False]
         else:
             "WARNING: %s is not in proper format.  Chances are we won't find any automatic annotations when searching." % test_string
+            return [test_string, False]
     
     def write_specimen_json(basename, output_match_dict):
         """Write $basename.specimen.json."""
@@ -713,7 +720,7 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
         output_match = {}
         for sheet_name in sheet_entries.keys():
             for entry in sheet_entries[sheet_name]:
-                print sheet_name
+
                 # need these headers to populate some output in specimen.json
                 # will try to use as much info from standard pipeline variables (e.g. panel, pipeline_version)
                 necessary_headers = ['CoPath #',
@@ -726,48 +733,48 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
                     
                 if all(x in entry.keys() for x in necessary_headers):
                     if entry['CoPath #'] == copath_test:
-                        print "SUCCESS: All headers detected"
-                        print "SUCCESS: We have a match in the TP spreadsheet"
+                        #print "SUCCESS: All headers detected"
+                        #print "SUCCESS: We have a match in the TP spreadsheet"
                 
                         try:
                             output_match['pipeline_version'] = pipeline_version
                         except:
-                            print "FAIL: Could not define 'pipeline_version'"
+                            #print "FAIL: Could not define 'pipeline_version'"
                             output_match['pipeline_version'] = ''
                         try:
                             output_match['dissection'] = entry['laser/ manual MD']
                         except:
-                            print "FAIL: Could not define 'dissection'"
+                            #print "FAIL: Could not define 'dissection'"
                             output_match['dissection'] = ''
                         try:
                             output_match['malignant_cells'] = "{0:.0f}%".format(float(entry['% Malignant cells']) * 100)
                         except:
-                            print "FAIL: Could not define 'malignant_cells'"
+                            #print "FAIL: Could not define 'malignant_cells'"
                             output_match['malignant_cells'] = ''
                         try:
                             output_match['tumor'] = entry['Tumor type'] + ", " + entry['Tumor Source']
                         except:
-                            print "FAIL: Could not define 'tumor'"
+                            #print "FAIL: Could not define 'tumor'"
                             output_match['tumor'] = ''
                         try:
                             output_match['normal'] = entry['Normal Source']
                         except:
-                            print "FAIL: Could not define 'normal'"
+                            #print "FAIL: Could not define 'normal'"
                             output_match['normal'] = ''
                         try:
                             output_match['requested_by'] = entry['Requesting Physician']
                         except:
-                            print "FAIL: Could not define 'requested_by'"
+                            #print "FAIL: Could not define 'requested_by'"
                             output_match['requested_by'] = ''
                         try:
                             output_match['panel'] = panel
                         except:
-                            print "FAIL: Could not define 'requested_by'"
+                            #print "FAIL: Could not define 'requested_by'"
                             output_match['panel'] = ''
                         try:
                             output_match['panel_version'] = '1.0'
                         except:
-                            print "FAIL: Could not define 'panel_version'"
+                            #print "FAIL: Could not define 'panel_version'"
                             output_match['panel_version'] = '1.0'
                 else:
                     for necessary_header in necessary_headers:
@@ -777,76 +784,81 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
                                 try:
                                     output_match['pipeline_version'] = pipeline_version
                                 except:
-                                    print "FAIL: Could not define 'pipeline_version'"
+                                    #print "FAIL: Could not define 'pipeline_version'"
                                     output_match['pipeline_version'] = ''
                                 try:
                                     output_match['dissection'] = entry['laser/ manual MD']
                                 except:
-                                    print "FAIL: Could not define 'dissection'"
+                                    #print "FAIL: Could not define 'dissection'"
                                     output_match['dissection'] = ''
                                 try:
                                     output_match['malignant_cells'] = "{0:.0f}%".format(float(entry['% Malignant cells']) * 100)
                                 except:
-                                    print "FAIL: Could not define 'malignant_cells'"
+                                    #print "FAIL: Could not define 'malignant_cells'"
                                     output_match['malignant_cells'] = ''
                                 try:
                                     output_match['tumor'] = entry['Tumor type'] + ", " + entry['Tumor Source']
                                 except:
-                                    print "FAIL: Could not define 'tumor'"
+                                    #print "FAIL: Could not define 'tumor'"
                                     output_match['tumor'] = ''
                                 try:
                                     output_match['normal'] = entry['Normal Source']
                                 except:
-                                    print "FAIL: Could not define 'normal'"
+                                    #print "FAIL: Could not define 'normal'"
                                     output_match['normal'] = ''
                                 try:
                                     output_match['requested_by'] = entry['Requesting Physician']
                                 except:
-                                    print "FAIL: Could not define 'requested_by'"
+                                    #print "FAIL: Could not define 'requested_by'"
                                     output_match['requested_by'] = ''
                                 try:
                                     output_match['panel'] = panel
                                 except:
-                                    print "FAIL: Could not define 'requested_by'"
+                                    #print "FAIL: Could not define 'requested_by'"
                                     output_match['panel'] = ''
                                 try:
                                     output_match['panel_version'] = '1.0'
                                 except:
-                                    print "FAIL: Could not define 'panel_version'"
+                                    #print "FAIL: Could not define 'panel_version'"
                                     output_match['panel_version'] = '1.0'
                                     
                             else:
                                 # Create default specimen.json file if CoPath # does not exist in spreadsheet
-                                print "FAIL: Need CoPath # to retrieve sample information.  Creating default specimen.json file"
+                                #print "FAIL: Need CoPath # to retrieve sample information.  Creating default specimen.json file"
                                 
                                 try:
                                     output_match['pipeline_version'] = pipeline_version
                                 except:
-                                    print "FAIL: Could not define 'pipeline_version'"
+                                    pass
+                                    #print "FAIL: Could not define 'pipeline_version'"
                                 try:
                                     output_match['dissection'] = ""
                                 except:
-                                    print "FAIL: Could not define 'dissection'"
+                                    pass
+                                    #print "FAIL: Could not define 'dissection'"
                                 try:
                                     output_match['malignant_cells'] = ""
                                 except:
-                                    print "FAIL: Could not define 'malignant_cells'"
+                                    pass
+                                    #print "FAIL: Could not define 'malignant_cells'"
                                 try:
                                     output_match['tumor'] = ""
                                 except:
-                                    print "FAIL: Could not define 'tumor'"
+                                    pass
+                                    #print "FAIL: Could not define 'tumor'"
                                 try:
                                     output_match['normal'] = ""
                                 except:
-                                    print "FAIL: Could not define 'normal'"
+                                    pass
+                                    #print "FAIL: Could not define 'normal'"
                                 try:
                                     output_match['panel'] = panel
                                 except:
-                                    print "FAIL: Could not define 'requested_by'"
+                                    pass
+                                    #print "FAIL: Could not define 'requested_by'"
                                 try:
                                     output_match['panel_version'] = '1.0'
                                 except:
-                                    print "FAIL: Could not define 'panel_version'"
                                     output_match['panel_version'] = '1.0'
     
         return output_match
@@ -862,8 +874,10 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
     sheet_entries = defaultdict(list)
     # Pop sheet_names that are incompatible with pipeline
     sheet_names.remove("TaqMan Cases")
+    sheet_names.remove("PD-L1 Cases")
     # Create a dict of entries from each sheet
     for sheet_name in sheet_names:
+        print sheet_name
         sheet_obj = spreadsheet.get_sheet_by_name(sheet_name)
         append_entry_to_dict(sheet_obj, sheet_entries)
 
@@ -876,7 +890,7 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
         if reformatted_bool is True:
             output_match = search_sheet_entries_for_id(reformatted_basename, sheet_name, sheet_entries)
         else:
-            print "WARNING: No matches on %s" % copath_test
+            print "WARNING: No matches on %s" % basename
     
     if output_match:
         dict_str = json.dumps(output_match)

@@ -90,7 +90,7 @@ global VCFLIB_DIR, IR_API_KEY
 SAMTOOLS_EXE = "/home/michael/bin/samtools-1.1/samtools"
 BEDTOOLS_EXE = "/home/michael/bin/bedtools2/bin/bedtools"
 VARSCAN_EXE = "/home/michael/bin/VarScan/VarScan.v2.3.9.jar"
-SNPSIFT_EXE = "/home/michael/bin/snpEff/SnpSift.jar"
+SNPSIFT_EXE = "/home/michael/bin/snpEff-4.3i/SnpSift.jar"
 VEP_EXE = "/home/michael/bin/ensembl-tools-release-83/scripts/variant_effect_predictor/variant_effect_predictor.pl"
 VEP_FILTER_EXE = "/home/michael/bin/ensembl-tools-release-83/scripts/variant_effect_predictor/filter_vep.pl"
 EDDY_EXE = "/home/michael/bin/eddy.jar"
@@ -484,7 +484,7 @@ def main():
                                          """(HRUN[*] <= 6)
                                              & ((FDP[*] >= 20) | (DP[*] >= 20))
                                              & ((FAO[*] >= 2) | (AO[*] >= 2)) 
-                                             & ((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5))
+                                             & (((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5)) | (GEN[1] = '.')) 
                                              & ( ((GEN[0].AF[*] >= 0.65) & (GEN[1].AF[*] <= 0.65)) | (isHom(GEN[0]) & isHet(GEN[1])) )
                                              & !(ALT='<CNV>')""", 
                                          ionreporter_germline_unfiltered_vcf]
@@ -496,7 +496,7 @@ def main():
                                         & ((GEN[0].AF[*] >= 0.30) & (GEN[1].AF[*] >= 0.30))
                                         & ((FDP[*] >= 20) | (DP[*] >= 20))
                                         & ((FAO[*] >= 2) | (AO[*] >= 2)) 
-                                        & ((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5)) 
+                                        & (((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5)) | (GEN[1] = '.')) 
                                         & !(ALT='<CNV>')""", 
                                         ionreporter_germline_unfiltered_vcf]
                                        )
