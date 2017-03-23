@@ -493,10 +493,10 @@ def main():
         program_filter_vcf_list.append(
                                         ["ionreporter.germline",
                                         """(HRUN[*] <= 6)
-                                        & ((GEN[0].AF[*] >= 0.30) & (GEN[1].AF[*] >= 0.30))
+                                        & (GEN[0].AF[*] >= 0.20)
                                         & ((FDP[*] >= 20) | (DP[*] >= 20))
                                         & ((FAO[*] >= 2) | (AO[*] >= 2)) 
-                                        & (((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5)) | (GEN[1] = '.')) 
+                                        & ((((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5)) & (GEN[1].AF[*] >= 0.30)) | (GEN[1] = '.'))
                                         & !(ALT='<CNV>')""", 
                                         ionreporter_germline_unfiltered_vcf]
                                        )

@@ -283,7 +283,7 @@ def apply_summary_filters(wb,sheetname,indices,transcript_id_row_dict,colocated_
                     summary_sheet[coordinate]="non-deleterious change(not reviewed)"
                 elif tumor_VAF.value is None:
                     pass
-                elif float(tumor_VAF.value) <= 0.35:
+                elif float(tumor_VAF.value) <= 0.20:
                     summary_sheet[coordinate]="no significant VAF in tumor"               
                 elif re.search("^rs",str(colocated_variant.value)):
                     try:

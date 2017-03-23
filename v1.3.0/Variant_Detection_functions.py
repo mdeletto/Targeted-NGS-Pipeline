@@ -68,7 +68,7 @@ def SnpSift_filter(vcf_in, SnpSift, BEDTOOLS_EXE, regex_filter, base_output, pro
     print "Filtering VCF input for %s..." % program
     try:
         if program == "ionreporter.germline" and do_not_separate_LOH_from_germline is False:
-            subprocess.call("""awk 'BEGIN { FS = "\t" } ; { if ($10!="." && $11!=".") print}' %s | \
+            subprocess.call("""awk 'BEGIN { FS = "\t" } ; { if ($10!=".") print}' %s | \
                                java -jar %s filter "%s" 2>> %s.snpsift.log | \
                                java -jar %s varType - | \
                                %s subtract -a stdin -b %s.ionreporter.loh.vcf > %s.%s.vcf""" % (vcf_in,SnpSift,regex_filter,base_output,SnpSift,BEDTOOLS_EXE,base_output,base_output,program),shell=True)
@@ -876,8 +876,8 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
     sheet_names.remove("TaqMan Cases")
     sheet_names.remove("PD-L1 Cases")
     # Create a dict of entries from each sheet
+    print "Checking in the following sheet names for matching case IDs: " + ", ".join(sheet_names)
     for sheet_name in sheet_names:
-        print sheet_name
         sheet_obj = spreadsheet.get_sheet_by_name(sheet_name)
         append_entry_to_dict(sheet_obj, sheet_entries)
 

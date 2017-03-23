@@ -72,12 +72,19 @@ def main():
     class FORMAT_VCF_Fields:
         def __init__(self, format_dict, filename, alt):
             if re.search("ionreporter", filename):
+                
                 if 'FDP' in format_dict.keys():
-                    self.depth = format_dict['FDP']
+                    try:
+                        self.depth = format_dict['FDP']
+                    except:
+                        self.depth = "UNK"
+                    
                 else:
                     try:
                         if 'DP' in format_dict.keys():
                             self.depth = format_dict['DP']
+                        else:
+                            self.depth = "UNK"
                     except:
                         self.depth = format_dict['FDP']
                 try:
@@ -205,8 +212,11 @@ def main():
                     self.format_tumor = FORMAT_VCF_Fields(self.format_tumor_dict, reconstructed_file_basename, self.alt)
                 try:
                     self.format_normal_values = normal_order.split(":")
-                    tmp_dict = dict(zip(self.format_keys, self.format_normal_values))
-                    self.format_normal_dict = defaultdict(lambda: "UNK", tmp_dict)
+                    if len(self.format_normal_values) == 1:
+                        self.format_normal_dict = defaultdict(lambda: "UNK")
+                    else:
+                        tmp_dict = dict(zip(self.format_keys, self.format_normal_values))
+                        self.format_normal_dict = defaultdict(lambda: "UNK", tmp_dict)
                     self.format_normal = FORMAT_VCF_Fields(self.format_normal_dict, reconstructed_file_basename, self.alt)
                 except Exception, e:
                     self.format_normal_dict = defaultdict(lambda: "UNK")
