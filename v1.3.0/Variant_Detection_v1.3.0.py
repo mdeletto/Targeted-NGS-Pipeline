@@ -113,6 +113,7 @@ STRELKA_CONFIG = STRELKA_CONFIG_TARGETED
 MUTECT_V1_PON = "/home/michael/Development/MuTect/OCP.mutect.PON.vcf"
 MUTECT2_PON_OCP = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/OCP/OCP.mutect2.PON.vcf"
 MUTECT2_PON_CCP = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/CCP/CCP.mutect2.PON.vcf"
+MUTECT2_PON_TFNA = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/TFNA/PopulationNormal_TFNA_v1.vcf"
 
 # POPULATION NORMALS
 
@@ -300,6 +301,9 @@ def main():
     #mutect_vcf = muTect_caller_command(MUTECT_EXE,REGIONS_FILE,MUTECT_V1_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
     if opts.regions == "CCP":
         MUTECT2_PON = MUTECT2_PON_CCP
+        mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
+    elif opts.regions == "TFNA":
+        MUTECT2_PON = MUTECT2_PON_TFNA
         mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
     elif opts.regions in ["CHPv2","HSM","OCP","OCA"]:
         MUTECT2_PON = MUTECT2_PON_OCP
