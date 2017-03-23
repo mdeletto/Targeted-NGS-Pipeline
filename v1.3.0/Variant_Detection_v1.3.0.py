@@ -117,6 +117,7 @@ MUTECT2_PON_CCP = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTec
 # POPULATION NORMALS
 
 POPULATION_NORMAL_BAM_OCP = '/home/michael/YNHH/Reference_Files/Population_Normal/PopulationNormal_OCP_v2.bam'
+POPULATION_NORMAL_BAM_TFNA = '/home/michael/YNHH/Reference_Files/Population_Normal/TFNA/PopulationNormal_TFNA_v1.bam'
 #POPULATION_NORMAL_BAM_OCP = '/home/michael/YNHH/Reference_Files/Population_Normal/simulated/Population_Normal.OCP.v1.simulated.bam'
 POPULATION_NORMAL_BAM_CCP = '/home/michael/YNHH/Reference_Files/Population_Normal/Population_Normal_PGM_v2.CCP.bam'
 
@@ -155,6 +156,8 @@ def main():
             if re.search("Population", opts.normal):
                 if opts.regions == "CCP":
                     opts.normal = POPULATION_NORMAL_BAM_CCP
+                elif opts.regions == "TFNA":
+                    opts.normal = POPULATION_NORMAL_BAM_TFNA
                 else:
                     opts.normal = POPULATION_NORMAL_BAM_OCP
         else:
