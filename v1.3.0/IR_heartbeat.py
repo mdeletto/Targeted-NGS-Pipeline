@@ -291,6 +291,9 @@ def download_bams_from_IR(IR_download_link,IR_download_dir,workflow_dict_key):
                 bam_pipeline_flags['%s_barcode' % sample_type] = local_bam_filepath_name  
                 bam_pipeline_flags['%s_bam_path' % (sample_type)] = "%s/%s-%s.bam" % (os.getcwd(),sample_name,sample_type)
                 bam_pipeline_flags['%s_bam_name' % (sample_type)] = "%s-%s.bam" % (sample_name,sample_type)
+                
+            os.remove(sample_definition_file)
+            
         elif os.path.isfile("%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)):
             bam_pipeline_flags['merged_bams'] = True
             bam_pipeline_flags['%s_bam_name' %(sample_type)] = "%s-%s-merged.bam" % (sample_name,sample_type)
@@ -542,7 +545,7 @@ def connect_to_mysql_and_load_qc_dict(sample_name):
             if runErrorNotes is None or runErrorNotes == "":
                runErrorNotes = "" 
             
-            if 'mapd' in workflow_dict[sample_name]['qc'] and not re.search("Population", workflow_dict[sample_name]['somatic_analysis']['somatic_normal_name']):
+            if 'mapd' in workflow_dict[sample_name]['qc']: #and not re.search("Population", workflow_dict[sample_name]['somatic_analysis']['somatic_normal_name']):
                 print "OK: CNV Assessment detected for %s" % sample_name
                 qc_dict['cnvAssessment'] = 1
                 if float(workflow_dict[sample_name]['qc']['mapd']) >= 0.9:
@@ -675,8 +678,9 @@ def run_pipeline():
         # For QC samples, we don't want any calls to be filtered based on consequence
         if re.search("QC", key):
             command += " --disable_filtering"
-            if re.search("TFNA", str(workflow_dict[key]['panel_name'])):
-                command += " --ionreporter only"
+            
+        if re.search("TFNA", str(workflow_dict[key]['panel_name'])):
+            command += " --disable_filtering --ionreporter_only"
      
         if opts.pipeline_arguments is not None:
             command += str(opts.pipeline_arguments)
@@ -728,7 +732,7 @@ def IR_analysis_control():
                              'TFNA' : {
                                         'somatic_analysis' : 'required',
                                         'germline_analysis' : 'optional',
-                                        'fusion_analysis' : 'required'  
+                                        'fusion_analysis' : 'optional'  
                                        }
                              }
 
@@ -1117,7 +1121,6 @@ if len(workflow_dict) > 0:
         
         # Change directory to user directory
         os.chdir(workflow_dict[key]['user_abbrev'])
-        print os.getcwd()
         # Download BAMs
         initiate_IR_download(workflow_dict, key)
         

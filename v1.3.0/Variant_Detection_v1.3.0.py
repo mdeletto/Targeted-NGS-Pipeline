@@ -101,6 +101,10 @@ GATK_EXE = "/home/michael/bin/GATK/GenomeAnalysisTK.jar"
 GATK_LATEST_EXE = "/home/michael/bin/GATK-3.6/GenomeAnalysisTK.jar"
 STRELKA_EXE = '/home/michael/bin/strelka/bin/configureStrelkaWorkflow.pl'
 
+# CUSTOM EXECUTABLE
+
+PP_PARSER = '/home/michael/YNHH/Code/Github-mdeletto/Targeted-NGS-Pipeline/v1.3.0/pipeline-parser.py'
+
 # REFERENCE FILES
 
 VEP_REF_FASTA = "/home/michael/YNHH/Reference_Files/FASTA/hg19.VEP.fasta"
@@ -258,7 +262,7 @@ def main():
         
         ###  PROCESS FUSIONS VCF AND EXTRACT INFO ###
         
-        if os.path.isfile('./%s.ionreporter.fusions.vcf' % opts.base_output):
+        if os.path.isfile('%s.ionreporter.fusions.vcf' % opts.base_output):
             fusion_dict = extract_fusion_VCF_information('./%s.ionreporter.fusions.vcf' % opts.base_output)
             print fusion_dict
             # If gene expression counts exist, we will need to create a separate counts file.
@@ -392,11 +396,15 @@ def main():
                                    # second index = SnpSift filter expression
                                    # third index = vcf input
     
+# (FDP[*] >= 20) | (DP[*] >= 20)
+# ((FAO[*] >= 2) | (AO[*] >= 2)) 
+# ((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5)) 
+
                                    ["ionreporter.somatic",
                                     """(HRUN[*] <= 6)
-                                    & ((FDP[*] >= 20) | (DP[*] >= 20))
-                                    & ((FAO[*] >= 2) | (AO[*] >= 2)) 
-                                    & ((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5)) 
+                                    & (DP[*] >= 20)
+                                    & (AO[*] >= 2)
+                                    & (GEN[1].DP[*] >= 5)
                                     & !(ALT='<CNV>')""", 
                                     ionreporter_somatic_unfiltered_vcf],
     
@@ -489,9 +497,10 @@ def main():
         program_filter_vcf_list.append(
                                        ["ionreporter.loh",
                                          """(HRUN[*] <= 6)
-                                             & ((FDP[*] >= 20) | (DP[*] >= 20))
-                                             & ((FAO[*] >= 2) | (AO[*] >= 2)) 
-                                             & (((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5)) | (GEN[1] = '.')) 
+                                            & (DP[*] >= 20)
+                                            & (AO[*] >= 2) 
+                                            & (GEN[0] != '.')
+                                             & ((GEN[1].DP[*] >= 5) | (GEN[1] = '.')) 
                                              & ( ((GEN[0].AF[*] >= 0.65) & (GEN[1].AF[*] <= 0.65)) | (isHom(GEN[0]) & isHet(GEN[1])) )
                                              & !(ALT='<CNV>')""", 
                                          ionreporter_germline_unfiltered_vcf]
@@ -501,9 +510,10 @@ def main():
                                         ["ionreporter.germline",
                                         """(HRUN[*] <= 6)
                                         & (GEN[0].AF[*] >= 0.20)
-                                        & ((FDP[*] >= 20) | (DP[*] >= 20))
-                                        & ((FAO[*] >= 2) | (AO[*] >= 2)) 
-                                        & ((((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5)) & (GEN[1].AF[*] >= 0.30)) | (GEN[1] = '.'))
+                                        & (DP[*] >= 20)
+                                        & (AO[*] >= 2)
+                                        & (GEN[0] != '.') 
+                                        & (((GEN[1].DP[*] >= 5) & (GEN[1].AF[*] >= 0.30)) | ((GEN[1] = '.') & ((VARTYPE !~ 'DEL') | (VARTYPE !~ 'INS'))))
                                         & !(ALT='<CNV>')""", 
                                         ionreporter_germline_unfiltered_vcf]
                                        )
@@ -550,6 +560,13 @@ def main():
     
     move_files_to_new_subdirectory(opts.tumor, opts.normal, opts.base_output, opts.galaxy_flag)
 
+    try:
+        print "RUNNING pipeline-parser.py"
+        subprocess.call("python2.7 %s -a --output-basename %s.unfiltered" % (PP_PARSER, opts.base_output), shell=True)
+    except:
+        print "ERROR: pipeline-parser.py failed"
+    
+    
     if opts.galaxy_flag is True:
         Galaxy_special_function(opts.base_output, opts.output_directory)
         zip_files(opts.base_output, opts.output_directory)

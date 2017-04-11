@@ -68,14 +68,14 @@ def SnpSift_filter(vcf_in, SnpSift, BEDTOOLS_EXE, regex_filter, base_output, pro
     print "Filtering VCF input for %s..." % program
     try:
         if program == "ionreporter.germline" and do_not_separate_LOH_from_germline is False:
-            subprocess.call("""awk 'BEGIN { FS = "\t" } ; { if ($10!=".") print}' %s | \
-                               java -jar %s filter "%s" 2>> %s.snpsift.log | \
+            subprocess.call("""cat %s | \
                                java -jar %s varType - | \
-                               %s subtract -a stdin -b %s.ionreporter.loh.vcf > %s.%s.vcf""" % (vcf_in,SnpSift,regex_filter,base_output,SnpSift,BEDTOOLS_EXE,base_output,base_output,program),shell=True)
+                               java -jar %s filter "%s" 2>> %s.snpsift.log | \
+                               %s subtract -a stdin -b %s.ionreporter.loh.vcf >> %s.%s.vcf""" % (vcf_in, SnpSift,SnpSift,regex_filter,base_output,BEDTOOLS_EXE,base_output,base_output,program),shell=True)
         else:
-            subprocess.call("""awk 'BEGIN { FS = "\t" } ; { if ($10!=".") print}' %s | \
+            subprocess.call("""cat %s | \
                                 java -jar %s varType - | \
-                               java -jar %s filter "%s" 2>> %s.snpsift.log > %s.%s.vcf""" % (vcf_in,SnpSift,SnpSift,regex_filter,base_output,base_output,program),shell=True)
+                               java -jar %s filter "%s" 2>> %s.snpsift.log >> %s.%s.vcf""" % (vcf_in,SnpSift, SnpSift,regex_filter, base_output, base_output,program),shell=True)
         return "%s.%s.vcf" % (base_output, program)
     except:
         print "ERROR: Filtering of VCF input with SnpSift failed.  Aborting..."
@@ -84,7 +84,7 @@ def SnpSift_filter(vcf_in, SnpSift, BEDTOOLS_EXE, regex_filter, base_output, pro
 def VEP_command_unfiltered(VEP,REF_FASTA,base_output,program, vcf_in):
     print "Annotating file..."
     try:
-        subprocess.call('perl %s --quiet --cache --merged --offline --fasta %s -i %s --everything --check_alleles --coding_only --cache_version 83 --json -o %s.%s.json -fork 16 &> %s.vep.log' % (VEP,REF_FASTA,vcf_in,base_output,program,base_output),shell=True)
+        subprocess.call('perl %s --quiet --cache --merged --offline --fasta %s -i %s --everything --check_alleles --cache_version 83 --json -o %s.%s.json -fork 16 &> %s.vep.log' % (VEP,REF_FASTA,vcf_in,base_output,program,base_output),shell=True)
     except:
         print "ERROR: Could not initiate annotation on VCF file"
 
