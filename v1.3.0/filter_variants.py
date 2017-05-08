@@ -778,8 +778,8 @@ def perform_monthly_QC_check(wb, variant_summary_dict):
                                                                                                       qc_sheet_output_fields[4],
                                                                                                       qc_sheet_output_fields[4]
                                                                                                     )
-                    if column_counter == 14:
-                        print cell.value
+#                     if column_counter == 14:
+#                         print cell.value
                     cell.font = Font(name="Liberation Sans",size=10,color=BLUE)
                 
                 column_counter += 1

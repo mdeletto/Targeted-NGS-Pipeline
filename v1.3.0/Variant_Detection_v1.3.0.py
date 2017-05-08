@@ -442,7 +442,7 @@ def main():
                                         ["mutect2.somatic",
                                          """((GEN[0].AF >= 0.05) 
                                              & (GEN[0].AD[1] >= 2))
-                                             & ( (VARTYPE !~ 'DEL') & (VARTYPE !~ 'INS') ) )
+                                             & ( (VARTYPE !~ 'DEL') & (VARTYPE !~ 'INS') ) 
                                              | (FILTER = 'PASS')""",
                                         mutect2_unfiltered_vcf],
          

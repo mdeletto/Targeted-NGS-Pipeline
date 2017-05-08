@@ -169,23 +169,27 @@ def select_analyses(all_IR_analyses):
         
         return names_to_remove
     
+    
+    
     names = []
     date = format_date_to_string(opts.date)
-
+    # Only match analyses that have SOMATIC|FUSION|GERMLINE in name
+    pattern = re.compile('SOMATIC|FUSION|GERMLINE')
+    
     for analysis in all_IR_analyses:
-
-        if analysis['start_date'] == date: #and analysis['started_by'] == "Mike D'Eletto":
-            if not re.search('-',analysis['name']) and not re.search('_',analysis['name']):
-                print "ERROR: Analysis string is not in correct format.  Please consult README for using this workflow.  Trying to proceed..."
-                names.append(analysis['name'].strip())
-            elif not re.search('_',analysis['name']):
-                name_split = analysis['name'].split("-")
-                copath_id = str(name_split[0]+"-"+name_split[1])
-                names.append(copath_id.strip())
-            elif re.search('_',analysis['name']):
-                name_split = analysis['name'].split("_")
-                copath_id = name_split[0]
-                names.append(copath_id.strip())
+        if pattern.search(analysis['name'], re.IGNORECASE):
+            if analysis['start_date'] == date: #and analysis['started_by'] == "Mike D'Eletto":
+                if not re.search('-',analysis['name']) and not re.search('_',analysis['name']):
+                    print "ERROR: Analysis string is not in correct format.  Please consult README for using this workflow.  Trying to proceed..."
+                    names.append(analysis['name'].strip())
+                elif not re.search('_',analysis['name']):
+                    name_split = analysis['name'].split("-")
+                    copath_id = str(name_split[0]+"-"+name_split[1])
+                    names.append(copath_id.strip())
+                elif re.search('_',analysis['name']):
+                    name_split = analysis['name'].split("_")
+                    copath_id = name_split[0]
+                    names.append(copath_id.strip())
     
     
     names = list(set(names))
@@ -291,7 +295,8 @@ def download_bams_from_IR(IR_download_link,IR_download_dir,workflow_dict_key):
                 bam_pipeline_flags['%s_barcode' % sample_type] = local_bam_filepath_name  
                 bam_pipeline_flags['%s_bam_path' % (sample_type)] = "%s/%s-%s.bam" % (os.getcwd(),sample_name,sample_type)
                 bam_pipeline_flags['%s_bam_name' % (sample_type)] = "%s-%s.bam" % (sample_name,sample_type)
-                
+            
+            # Remove sample definition file
             os.remove(sample_definition_file)
             
         elif os.path.isfile("%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)):
@@ -521,7 +526,7 @@ def connect_to_mysql_and_load_qc_dict(sample_name):
     # Limit 10, and Order by most recent lastModified
     sql = "SELECT resultName, runStatus, runErrorNotes FROM targetedNGSRunQualityControlMetrics \
             WHERE sampleName LIKE '%s' \
-            ORDER BY lastModified DESC LIMIT 10" % sample_name
+            ORDER BY datetimeCreated DESC LIMIT 10" % sample_name
     
     try:
         # Execute the SQL command
