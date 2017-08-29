@@ -84,7 +84,10 @@ def SnpSift_filter(vcf_in, SnpSift, BEDTOOLS_EXE, regex_filter, base_output, pro
 def VEP_command_unfiltered(VEP,REF_FASTA,base_output,program, vcf_in):
     print "Annotating file..."
     try:
-        subprocess.call('perl %s --quiet --cache --merged --offline --fasta %s -i %s --everything --check_alleles --cache_version 83 --json -o %s.%s.json -fork 16 &> %s.vep.log' % (VEP,REF_FASTA,vcf_in,base_output,program,base_output),shell=True)
+        vep_json_command = 'perl %s --quiet --cache --merged --offline --fasta %s -i %s --everything --check_alleles --cache_version 83 --json -o %s.%s.json -fork 16 &> %s.vep.log' % (VEP,REF_FASTA,vcf_in,base_output,program,base_output)
+        vep_json_command_process = subprocess.Popen(vep_json_command.split(" "))
+        output, err = vep_json_command_process.communicate()
+        #subprocess.call('perl %s --quiet --cache --merged --offline --fasta %s -i %s --everything --check_alleles --cache_version 83 --json -o %s.%s.json -fork 16 &> %s.vep.log' % (VEP,REF_FASTA,vcf_in,base_output,program,base_output),shell=True)
     except:
         print "ERROR: Could not initiate annotation on VCF file"
 
@@ -156,12 +159,15 @@ def VEP_command_filtered(VEP,REF_FASTA,base_output,program,vcf_in):
 
         with open("%s.vep.log" % base_output,"w") as err:
             vep_json_command = 'perl %s --quiet --cache --merged --offline --force_overwrite --fasta %s -i %s --everything --maf_exac --check_alleles --cache_version 83 --no_intergenic --minimal --allele_number --json --fork 16 --output_file STDOUT' % (VEP, REF_FASTA, vcf_in)
-            vep_json_command_process = subprocess.Popen(vep_json_command,
+#             vep_json_command_process = subprocess.Popen(vep_json_command,
+#                                                         stdout=subprocess.PIPE,
+#                                                         stderr=err,
+#                                                         shell=True)
+            vep_json_command_process = subprocess.Popen(vep_json_command.split(" "),
                                                         stdout=subprocess.PIPE,
-                                                        stderr=err,
-                                                        shell=True)
+                                                        stderr=err)
 
-        output, err = vep_json_command_process.communicate()
+            output, err = vep_json_command_process.communicate()
         
         
         VEP_json_consequence_filtering(output, base_output, program)
@@ -174,7 +180,6 @@ def VEP_command_filtered(VEP,REF_FASTA,base_output,program,vcf_in):
 def move_files_to_new_subdirectory(tumor_bam, normal_bam, base_output,galaxy_flag):
     print "Moving files to new directory named %s to prepare for final spreadsheet processing..." % base_output
     try:
-        #subprocess.call('/usr/lib/jvm/java-8-oracle/jre/bin/java -jar %s -f %s.varscan.json %s.ionreporter.no_cnv.json %s.ionreporter.cnv.vcf %s.ionreporter.tsv' % (EDDY,base_output,base_output,base_output,base_output),shell=True)
         if os.getcwd().split("/")[-1] == base_output:
 
             if galaxy_flag is False:
@@ -443,7 +448,7 @@ def select_target_regions(regions):
         elif regions=="TSC":
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/TSC1-TSC2/TSC1_2.designed.bed"
         elif regions=="TFNA":
-            REGIONS_FILE = "/home/michael/YNHH/Reference_Files/TFNA/Yale_Thyroid_DNA_WG_99191_167.1.20160607/WG_99191_167.1.20160607.designed.bed"
+            REGIONS_FILE = "/home/michael/YNHH/Reference_Files/TFNA/Yale_Thyroid_DNA_WG_99191_167.1.20160607/WG_99191_167.1.20160607.TERTspike.designed.bed"
         else:
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/CCPHSMV2_052013.bed"
             print "WARNING: No bed file was selected.  Defaulting to using CCP regions to capture as much data as possible."
@@ -652,6 +657,11 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
                 max_column
             except NameError:
                 max_column = sheet_obj.max_column
+            
+            try:
+                max_row
+            except NameError:
+                max_row = 1
                 
     
             return [max_column, max_row]
@@ -776,6 +786,17 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
                         except:
                             #print "FAIL: Could not define 'panel_version'"
                             output_match['panel_version'] = '1.0'
+                    else:
+
+                        output_match['pipeline_version'] = pipeline_version
+                        output_match['dissection'] = ''
+                        output_match['malignant_cells'] = ''
+                        output_match['tumor'] = ''
+                        output_match['normal'] = ''
+                        output_match['requested_by'] = ''
+                        output_match['panel'] = panel
+                        output_match['panel_version'] = '1.0'
+
                 else:
                     for necessary_header in necessary_headers:
                         if not necessary_header in entry.keys():
@@ -870,6 +891,10 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
     spreadsheet = load_workbook(spreadsheet_path, data_only=True)
     # Get sheet names
     sheet_names = spreadsheet.get_sheet_names()
+    # Remove sheet names that aren't named
+    for sheet_name in list(sheet_names):
+        if re.search("Sheet", sheet_name):
+            sheet_names.remove(sheet_name)
     # Initialize defaultdict
     sheet_entries = defaultdict(list)
     # Pop sheet_names that are incompatible with pipeline
@@ -891,6 +916,8 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
             output_match = search_sheet_entries_for_id(reformatted_basename, sheet_name, sheet_entries)
         else:
             print "WARNING: No matches on %s" % basename
+            write_specimen_json(basename, output_match)
+            
     
     if output_match:
         dict_str = json.dumps(output_match)

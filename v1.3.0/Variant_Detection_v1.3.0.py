@@ -3,6 +3,7 @@
 import datetime
 import optparse
 import os
+import time
 import pysam
 import sys
 import subprocess
@@ -207,9 +208,7 @@ def main():
             pass
         
         if opts.ionreporter_somatic_url_bool == True:
-            
-            
-            
+
             print "Remote download of SOMATIC VCF from IonReporter initiated.  Please hold..."
             # Url encode ionreporter analysis names that have excess whitespace
             url_encoded_ionreporter_somatic_analysis_name = urllib.quote_plus(opts.ionreporter_somatic_analysis_name)
@@ -232,6 +231,7 @@ def main():
         else:
             pass
     
+    
         if opts.ionreporter_fusion_url_bool == True:
             print "Remote download of FUSION VCF from IonReporter initiated.  Please hold..."
             # Url encode ionreporter analysis names that have excess whitespace
@@ -242,6 +242,15 @@ def main():
                 # Download analysis and process files
                 IR_download_fusion_zip(variant_link, opts.base_output) 
                 print "SUCCESSFULLY DOWNLOADED FUSION IR VCF"
+                retries = 1
+                while '%s.ionreporter.fusions.vcf' % opts.base_output not in os.listdir(os.getcwd()):
+                    if retries <= 5:
+                        print "WARNING: %s.ionreporter.fusions.vcf not found.  Waiting 2 seconds and trying again (current attempt: %s)" % (opts.base_output, str(retries))
+                        time.sleep(2)
+                        retries += 1
+                    else:
+                        print "FAILED TO DOWNLOAD FUSION IR VCF"
+                        sys.exit(1)
             except:
                 print "FAILED TO DOWNLOAD FUSION IR VCF"
                 sys.exit(1)
@@ -258,21 +267,22 @@ def main():
                 print "Fusion VCF local input"
                 rename_fusion_vcf(opts.ionreporter_fusion_vcf,opts.base_output) # Rename fusions.vcf file as (basename).ionreporter.fusions.vcf
     
+    
+        
+    
         # Check for ionreporter.fusions.vcf
         
         ###  PROCESS FUSIONS VCF AND EXTRACT INFO ###
-        
+
         if os.path.isfile('%s.ionreporter.fusions.vcf' % opts.base_output):
             fusion_dict = extract_fusion_VCF_information('./%s.ionreporter.fusions.vcf' % opts.base_output)
-            print fusion_dict
             # If gene expression counts exist, we will need to create a separate counts file.
             # This file will be used for differential expression analysis
             if fusion_dict['gene_expression_read_counts']:
-                with open('%s.gene_expression.counts.tsv') as gene_expression_out:
+                with open('%s.gene_expression.counts.tsv' % opts.base_output, "w") as gene_expression_out:
                     gene_expression_out.write("Gene\t%s\n" % opts.base_output)
                     for k in fusion_dict['gene_expression_read_counts'].keys():
-                        gene_expression_out.write("%s\t%s|n" % (k, fusion_dict['gene_expression_read_counts'][k]))
-    
+                        gene_expression_out.write("%s\t%s" % (k, str(fusion_dict['gene_expression_read_counts'][k])) + "\n")
     
         #---SELECT IONREPORTER VCF AND APPLY IR VERSION FIX IF NECESSARY---#
         
@@ -404,7 +414,6 @@ def main():
                                     """(HRUN[*] <= 6)
                                     & (DP[*] >= 20)
                                     & (AO[*] >= 2)
-                                    & (GEN[1].DP[*] >= 5)
                                     & !(ALT='<CNV>')""", 
                                     ionreporter_somatic_unfiltered_vcf],
     
@@ -554,18 +563,17 @@ def main():
     #---------------------------------FINAL POST-PROCESSING-------------------------------------
     #-------------------------------------------------------------------------------------------
     
-    
-    
     extra_file_cleanup()
-    
-    move_files_to_new_subdirectory(opts.tumor, opts.normal, opts.base_output, opts.galaxy_flag)
 
     try:
         print "RUNNING pipeline-parser.py"
-        subprocess.call("python2.7 %s -a --output-basename %s.unfiltered" % (PP_PARSER, opts.base_output), shell=True)
+        subprocess.call("python %s -a --output-basename %s.unfiltered" % (PP_PARSER, opts.base_output), shell=True)
     except:
         print "ERROR: pipeline-parser.py failed"
     
+    time.sleep(10)
+    
+    move_files_to_new_subdirectory(opts.tumor, opts.normal, opts.base_output, opts.galaxy_flag)
     
     if opts.galaxy_flag is True:
         Galaxy_special_function(opts.base_output, opts.output_directory)

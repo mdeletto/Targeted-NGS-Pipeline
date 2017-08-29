@@ -99,7 +99,7 @@ def main():
                     self.fsrb = float(float(format_dict['FSAF']) / float(int(format_dict['FSAF']) + int(format_dict['FSAR'])))
                     self.rsrb = float(float(format_dict['FSAR']) / float(int(format_dict['FSAF']) + int(format_dict['FSAR'])))
                 except Exception, e:
-                    print "ERROR10:10 Unable to define format fields"
+                    print "ERROR: Unable to define format fields"
                     print str(e)
                     self.fsrb, self.rsrb = ("UNK" for i in range(2))
             elif re.search("mutect2", filename):

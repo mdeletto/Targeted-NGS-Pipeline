@@ -174,7 +174,7 @@ def select_analyses(all_IR_analyses):
     names = []
     date = format_date_to_string(opts.date)
     # Only match analyses that have SOMATIC|FUSION|GERMLINE in name
-    pattern = re.compile('SOMATIC|FUSION|GERMLINE')
+    pattern = re.compile('SOMATIC|Somatic|Fusion|FUSION|Germline|GERMLINE')
     
     for analysis in all_IR_analyses:
         if pattern.search(analysis['name'], re.IGNORECASE):
@@ -579,7 +579,6 @@ def connect_to_mysql_and_load_qc_dict(sample_name):
 #                     runErrorNotes = "FAIL:" + runErrorNotes
         
             # PERFORM THE MYSQL DATABASE UPDATE FOR THE ANALYSIS
-            print "MAPD = %s" % qc_dict['mapd']
         
             sql = "UPDATE targetedNGSRunQualityControlMetrics SET geneFusionAssessment = '%s', sumRNAControls = '%s', cnvAssessment = '%s', mapdScore = '%s', runStatus = '%s', runErrorNotes = '%s', modifier = 'AUTO', lastModified = '%s' \
                     WHERE resultName = '%s' AND sampleName = '%s'" % (qc_dict['geneFusionAssessment'],
@@ -940,10 +939,13 @@ for name in names:
                         somatic_base_filepath = determine_IR_basename_filepath(analysis['name'], analysis['id'], opts.url, IR_API_KEY)
                         trash, dirpath = somatic_base_filepath.split("filepath=")
                         dirpath = "/".join(dirpath.split("/")[:-1])
-                        remote_command_output = connect_to_IR_server_and_run_command("grep '##mapd' %s/outputs/AnnotatorActor-00/annotated_variants.vcf" % dirpath)
-                        match = re.search("##mapd=(.*)", remote_command_output.read().strip())
-                        mapd = round(float(match.group(1)), 3)
-                        qc_dict['mapd'] = mapd
+                        try:
+                            remote_command_output = connect_to_IR_server_and_run_command("grep '##mapd' %s/outputs/AnnotatorActor-00/annotated_variants.vcf" % dirpath)
+                            match = re.search("##mapd=(.*)", remote_command_output.read().strip())
+                            mapd = round(float(match.group(1)), 3)
+                            qc_dict['mapd'] = mapd
+                        except:
+                            pass
                         # Handle repeat analyses by choosing a repeat analysis if it exists.
                         if re.search("repeat", analysis['name'], re.IGNORECASE):
                             repeat_flag = True
@@ -962,8 +964,16 @@ for name in names:
                             somatic_dict['somatic_analysis_status'] = analysis['status']
                             somatic_dict['somatic_analysis_name'] = analysis['name']
                             somatic_dict['somatic_analysis_id'] = analysis['id']
-                            somatic_dict['somatic_tumor_name'] = analysis['samples']['TUMOR']
-                            somatic_dict['somatic_normal_name'] = analysis['samples']['NORMAL']
+                            if 'TUMOR' in analysis['samples'].keys():
+                                somatic_dict['somatic_tumor_name'] = analysis['samples']['TUMOR']
+                            elif 'PROBAND' in analysis['samples'].keys():
+                                somatic_dict['somatic_tumor_name'] = analysis['samples']['PROBAND']
+
+                            if 'NORMAL' in analysis['samples'].keys():
+                                somatic_dict['somatic_normal_name'] = analysis['samples']['NORMAL']
+                            else:
+                                somatic_dict['somatic_normal_name'] = None
+                                
                             somatic_dict['somatic_workflow'] = analysis['workflow']
                             somatic_dict['somatic_workflow_start_date'] = datetime.datetime.strftime(datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y"), "%Y-%m-%d")
                             
