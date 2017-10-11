@@ -25,7 +25,7 @@ global opts
 
 desc="""IR_heartbeat.py acts as a gateway for initiating the bioinformatics analyses (variant calling, annotation, and other QC) for IonTorrent data.  The script contacts the IR server, pulls in necessary info, initiates the downstream bioinformatics analyses, and logs the activity in Elasticsearch."""
 usage="./IR_heartbeat -d <analysis_date>"
-version="1.0"
+version="1.3.0"
 parser = optparse.OptionParser(description=desc,usage=usage,version=version)
  
 group = optparse.OptionGroup(parser, "General options")
@@ -144,10 +144,10 @@ def IR_analysis_summary_view():
     else:
         today = datetime.datetime.strptime(opts.date, "%Y-%m-%d")
         today_formatted = today.strftime("%Y-%m-%d")
-        two_weeks_ago = today - datetime.timedelta(days=14)
-        two_weeks_ago_formatted = two_weeks_ago.strftime("%Y-%m-%d")
+        datediff = today - datetime.timedelta(days=int(opts.days))
+        datediff_string = datediff.strftime("%Y-%m-%d")
         
-        proc = subprocess.Popen(["""curl -k -H "Authorization:%s" "https://%s/webservices_42/rest/api/analysis?format=json&view=summary&start_date=%s&end_date=%s" 2> /dev/null""" % (IR_API_KEY,"10.80.157.179", two_weeks_ago_formatted, today_formatted)],shell=True,stdout=subprocess.PIPE)
+        proc = subprocess.Popen(["""curl -k -H "Authorization:%s" "https://%s/webservices_42/rest/api/analysis?format=json&view=summary&start_date=%s&end_date=%s" 2> /dev/null""" % (IR_API_KEY,"10.80.157.179", datediff_string, today_formatted)],shell=True,stdout=subprocess.PIPE)
     output, err = proc.communicate()
     all_IR_analyses = json.loads(output)
     
@@ -172,24 +172,47 @@ def select_analyses(all_IR_analyses):
     
     
     names = []
-    date = format_date_to_string(opts.date)
+    today_date_string = format_date_to_string(opts.date)
     # Only match analyses that have SOMATIC|FUSION|GERMLINE in name
     pattern = re.compile('SOMATIC|Somatic|Fusion|FUSION|Germline|GERMLINE')
     
     for analysis in all_IR_analyses:
         if pattern.search(analysis['name'], re.IGNORECASE):
-            if analysis['start_date'] == date: #and analysis['started_by'] == "Mike D'Eletto":
-                if not re.search('-',analysis['name']) and not re.search('_',analysis['name']):
-                    print "ERROR: Analysis string is not in correct format.  Please consult README for using this workflow.  Trying to proceed..."
-                    names.append(analysis['name'].strip())
-                elif not re.search('_',analysis['name']):
-                    name_split = analysis['name'].split("-")
-                    copath_id = str(name_split[0]+"-"+name_split[1])
-                    names.append(copath_id.strip())
-                elif re.search('_',analysis['name']):
-                    name_split = analysis['name'].split("_")
-                    copath_id = name_split[0]
-                    names.append(copath_id.strip())
+            
+            # format date object into string
+            today = datetime.datetime.strptime(opts.date, "%Y-%m-%d")
+            today_formatted = today.strftime("%Y-%m-%d")
+
+            if opts.days is not None: 
+                # User has entered opts.days, so we look back at all analyses in this time range
+                datediff = today - datetime.timedelta(days=int(opts.days))
+                
+                datediff_string = datediff.strftime("%Y-%m-%d")
+                if datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y") <= today and datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y") >= datediff: #and analysis['started_by'] == "Mike D'Eletto":
+                    if not re.search('-',analysis['name']) and not re.search('_',analysis['name']):
+                        print "ERROR: Analysis string is not in correct format.  Please consult README for using this workflow.  Trying to proceed..."
+                        names.append(analysis['name'].strip())
+                    elif not re.search('_',analysis['name']):
+                        name_split = analysis['name'].split("-")
+                        copath_id = str(name_split[0]+"-"+name_split[1])
+                        names.append(copath_id.strip())
+                    elif re.search('_',analysis['name']):
+                        name_split = analysis['name'].split("_")
+                        copath_id = name_split[0]
+                        names.append(copath_id.strip())
+            else:
+                if datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y") == today: #and analysis['started_by'] == "Mike D'Eletto":
+                    if not re.search('-',analysis['name']) and not re.search('_',analysis['name']):
+                        print "ERROR: Analysis string is not in correct format.  Please consult README for using this workflow.  Trying to proceed..."
+                        names.append(analysis['name'].strip())
+                    elif not re.search('_',analysis['name']):
+                        name_split = analysis['name'].split("-")
+                        copath_id = str(name_split[0]+"-"+name_split[1])
+                        names.append(copath_id.strip())
+                    elif re.search('_',analysis['name']):
+                        name_split = analysis['name'].split("_")
+                        copath_id = name_split[0]
+                        names.append(copath_id.strip())
     
     
     names = list(set(names))
@@ -914,7 +937,7 @@ for name in names:
         workflow_nested_dict, somatic_dict, germline_dict, fusion_dict, qc_dict = (defaultdict(lambda: None) for i in range(5))
         workflow_dict[name] = workflow_nested_dict
         for analysis in all_IR_analyses:
-            if (re.search(name,analysis['name']) or name==analysis['name'] or re.match(name,analysis['name'])) and analysis['start_date']==format_date_to_string(opts.date):
+            if (re.search(name,analysis['name']) or name==analysis['name'] or re.match(name,analysis['name'])): #and analysis['start_date']==format_date_to_string(opts.date):
                 # Pass analyses with designated flags
                 pattern = re.compile('BETA|SKIP|FALSE') # Remove 'TEST|RUO'
                 if pattern.search(analysis['name'], re.IGNORECASE):

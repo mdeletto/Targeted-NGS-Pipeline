@@ -618,6 +618,8 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
                 sys.exit("ERROR: N Drive is successfully mounted.  Where did the sheet go?  Re-check the filename")
             else:
                 sys.exit("ERROR: N Drive is not mounted.  Exiting...")
+            
+            return None
     
     
     def col2num(col):
@@ -887,24 +889,27 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
     panel = redefine_Downstream_panel_name(panel)
     # Check if TP stats spreadsheet exists
     spreadsheet_path = check_if_tpl_spreadsheet_exists()
-    # Load workbook
-    spreadsheet = load_workbook(spreadsheet_path, data_only=True)
-    # Get sheet names
-    sheet_names = spreadsheet.get_sheet_names()
-    # Remove sheet names that aren't named
-    for sheet_name in list(sheet_names):
-        if re.search("Sheet", sheet_name):
-            sheet_names.remove(sheet_name)
-    # Initialize defaultdict
-    sheet_entries = defaultdict(list)
-    # Pop sheet_names that are incompatible with pipeline
-    sheet_names.remove("TaqMan Cases")
-    sheet_names.remove("PD-L1 Cases")
-    # Create a dict of entries from each sheet
-    print "Checking in the following sheet names for matching case IDs: " + ", ".join(sheet_names)
-    for sheet_name in sheet_names:
-        sheet_obj = spreadsheet.get_sheet_by_name(sheet_name)
-        append_entry_to_dict(sheet_obj, sheet_entries)
+    
+    if spreadsheet_path:
+        # Load workbook
+        spreadsheet = load_workbook(spreadsheet_path, data_only=True)
+        # Get sheet names
+        sheet_names = spreadsheet.get_sheet_names()
+        # Remove sheet names that aren't named
+        for sheet_name in list(sheet_names):
+            if re.search("Sheet", sheet_name):
+                sheet_names.remove(sheet_name)
+        # Initialize defaultdict
+        sheet_entries = defaultdict(list)
+        # Pop sheet_names that are incompatible with pipeline
+        sheet_names.remove("TaqMan Cases")
+        sheet_names.remove("PD-L1 Cases")
+        
+        # Create a dict of entries from each sheet
+        print "Checking in the following sheet names for matching case IDs: " + ", ".join(sheet_names)
+        for sheet_name in sheet_names:
+            sheet_obj = spreadsheet.get_sheet_by_name(sheet_name)
+            append_entry_to_dict(sheet_obj, sheet_entries)
 
 
     # Search dict entries for ID that matches query ID
