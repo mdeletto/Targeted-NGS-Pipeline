@@ -17,6 +17,8 @@ import openpyxl
 import string
 from openpyxl.reader.excel import load_workbook
 from subprocess import CalledProcessError
+import cmd
+import MySQLdb
 
 
 def mkdir_p(path):
@@ -79,7 +81,6 @@ def SnpSift_filter(vcf_in, SnpSift, BEDTOOLS_EXE, regex_filter, base_output, pro
         return "%s.%s.vcf" % (base_output, program)
     except:
         print "ERROR: Filtering of VCF input with SnpSift failed.  Aborting..."
-
 
 def VEP_command_unfiltered(VEP,REF_FASTA,base_output,program, vcf_in):
     print "Annotating file..."
@@ -177,9 +178,11 @@ def VEP_command_filtered(VEP,REF_FASTA,base_output,program,vcf_in):
         print "ERROR: %s" % str(e)
 
 
+
 def move_files_to_new_subdirectory(tumor_bam, normal_bam, base_output,galaxy_flag):
     print "Moving files to new directory named %s to prepare for final spreadsheet processing..." % base_output
     try:
+        #subprocess.call('/usr/lib/jvm/java-8-oracle/jre/bin/java -jar %s -f %s.varscan.json %s.ionreporter.no_cnv.json %s.ionreporter.cnv.vcf %s.ionreporter.tsv' % (EDDY,base_output,base_output,base_output,base_output),shell=True)
         if os.getcwd().split("/")[-1] == base_output:
 
             if galaxy_flag is False:
@@ -232,15 +235,15 @@ def edit_IR_tsv_file(ionreporter_version,ionreporter_tsv,base_output):
             for line in f.readlines():
                 line = re.sub("# locus","#chr\tpos",line)
                 match = re.search("chr(.{1,2}):(\d*)",line)
-		if match is not None:
+        if match is not None:
                     line = re.sub("chr(.{1,2}):(\d*)","chr%s\t%s" % (match.group(1),match.group(2)),line)
-		tsv_output.write(line)
+        tsv_output.write(line)
                     
     else:
         tsv_output = open("%s.ionreporter.tsv" % base_output, "w")
         with open("%s" % ionreporter_tsv,"r") as f:
             for line in f.readlines():
-		line = re.sub("# locus","#chr\tpos",line)
+                line = re.sub("# locus","#chr\tpos",line)
                 match = re.search("chr(.{1,2}):(\d*)",line)
                 if match is not None:
                     line = re.sub("chr(.{1,2}):(\d*)","%s\t%s" % (match.group(1),match.group(2)),line)
@@ -275,7 +278,7 @@ def pull_BAM_from_url(url,base_output,sample_type):
 def zip_files(base_output,galaxy_dir):
     try:
         os.chdir(galaxy_dir)
-        subprocess.call('zip -q %s.zip %s.ionreporter.cnv.vcf %s.ionreporter.somatic.json %s.ionreporter.loh.json %s.ionreporter.germline.json %s.ionreporter.tsv %s.mutect2.somatic.json %s.strelka.somatic.json %s.ionreporter.fusions.vcf %s.specimen.json' % (base_output,base_output,base_output,base_output,base_output,base_output,base_output,base_output,base_output,base_output),shell=True)
+        subprocess.call('zip -qr %s.zip cnv/ %s.ionreporter.cnv.vcf %s.ionreporter.somatic.json %s.ionreporter.loh.json %s.ionreporter.germline.json %s.ionreporter.tsv %s.mutect2.somatic.json %s.strelka.somatic.json %s.ionreporter.fusions.vcf %s.specimen.json' % (base_output,base_output,base_output,base_output,base_output,base_output,base_output,base_output,base_output,base_output),shell=True)
     except:
         print "ERROR: Could not create zip file for Downstream upload. Check to make sure all output files exist."
 
@@ -337,23 +340,9 @@ def IR_locate_germline_variant_zip(basename,ionreporter_id):
         sys.exit(1)
 
 def IR_download_somatic_variant_zip(basename,variant_link,analysis_type):
-#     try:
-#         proc = subprocess.Popen(["""curl -k -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR.zip; \
-#                                     unzip IR.zip && unzip %s.zip; \
-#                                     cp ./Variants/*/*.vcf %s.ionreporter.%s_temp.vcf && cp ./Variants/*/*.tsv %s.ionreporter.%s_temp.tsv; \
-#                                     rm -rf %s.zip QC Variants Workflow_Settings""" % (variant_link,basename,basename,analysis_type,basename,analysis_type,basename)],shell=True,stdout=subprocess.PIPE)
-# 
-#         files = ["%s.ionreporter.%s_temp.vcf" % (basename, analysis_type),
-#                  "%s.ionreporter.%s_temp.tsv" % (basename, analysis_type)]
-#         
-#         return files
-#         
-#     except:
-#         print "Unable to download and/or unzip IonReporter files.  Aborting..."
-#         sys.exit(1)
 
     try:
-        proc = subprocess.Popen(["""curl -k -H "Content-Type:application/x-www-form-urlencoded" -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR_somatic.zip; \
+        proc = subprocess.Popen(["""curl -k -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR_somatic.zip; \
                                   unzip -q IR_somatic.zip; \
                                   rm -rf IR_somatic.zip; \
                                   unzip -q %s*.zip; \
@@ -371,12 +360,13 @@ def IR_download_somatic_variant_zip(basename,variant_link,analysis_type):
 
 def IR_download_fusion_zip(variant_link,basename):
     try:
-        proc = subprocess.Popen(["""curl -k -H "Content-Type:application/x-www-form-urlencoded" -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR_fusion.zip; \
+        proc = subprocess.Popen(["""curl -k -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR_fusion.zip; \
                                     unzip -q IR_fusion.zip; \
                                     rm -rf IR_fusion.zip; \
                                     unzip -q %s*.zip; \
                                     cp ./Variants/*/*.vcf %s.ionreporter.fusions.vcf; \
                                     rm -rf IR_fusion.zip %s*.zip QC Variants Workflow_Settings VER*.log""" % (variant_link,basename,basename,basename)],shell=True,stdout=subprocess.PIPE)
+        proc.communicate()
     except Exception, e:
         print str(e)
         print "Unable to download and/or unzip IonReporter Fusion files.  Aborting..."
@@ -390,12 +380,12 @@ def IR_download_germline_variant_zip(VCFLIB_DIR, basename, variant_link, analysi
     Because IR calls germline variants separately on each BAM and reports them as such, use VCFLIB to merge the VCFs together.
     """
     try:
-        subprocess.call("""curl -k -H "Content-Type:application/x-www-form-urlencoded" -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR_germline.zip; \
+        subprocess.call("""curl -k -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR_germline.zip; \
                            unzip -q IR_germline.zip; \
                            rm -rf IR_germline.zip; \
                            unzip -q %s*.zip; \
-                           cp ./Variants/%s/%s*.vcf %s.ionreporter.%s_temp.sample.vcf; \
-                           cp ./Variants/%s/%s*.vcf %s.ionreporter.%s_temp.control.vcf; \
+                           cp ./Variants/%s/%s.vcf %s.ionreporter.%s_temp.sample.vcf; \
+                           cp ./Variants/%s/%s.vcf %s.ionreporter.%s_temp.control.vcf; \
                            rm -rf IR_germline.zip %s*.zip QC Variants Workflow_Settings VER*.log""" % (variant_link, basename, germline_sample_dict['sample'], germline_sample_dict['sample'], basename, analysis_type, germline_sample_dict['control'], germline_sample_dict['control'], basename, analysis_type, basename), shell=True)
 #         subprocess.call("unzip -qq IR.zip && unzip -qq %s.zip" % basename, shell=True)
 #         subprocess.call("cp ./Variants/%s/%s.vcf %s.ionreporter.%s_temp.sample.vcf" % (germline_sample_dict['sample'],germline_sample_dict['sample'],basename,analysis_type), shell=True)
@@ -437,10 +427,13 @@ def bam_readcount_command(bam_readcount_exe,sample_type,base_output,reference_fa
 def select_target_regions(regions):
     try:
         print "Selecting target regions..."
+        
         if regions=="CCP":
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/CCP/CCPHSMV2_052013.bed"
-        elif regions=="OCP" or regions=="OCA" or regions=="OCPv2":
+        elif regions=="OCP" or regions=="OCA":
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/OCP/AmpliSeq_OCP/OCP.20150630.designed.bed"
+        elif regions=="OCPv3" or regions=="OCAv3":
+            REGIONS_FILE = "/home/michael/YNHH/Reference_Files/OCP/v3/OCAv3.20170110.designed.bed"
         elif regions=="BRCA":
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/BRCA1-2/BRCA1_2.20131001.designed.bed"
         elif regions=="CHPv2" or regions=="HSM":
@@ -456,6 +449,7 @@ def select_target_regions(regions):
         else:
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/CCPHSMV2_052013.bed"
             print "WARNING: No bed file was selected.  Defaulting to using CCP regions to capture as much data as possible."
+
         print "BED file selected as %s" %(REGIONS_FILE)
         return REGIONS_FILE
     except:
@@ -531,11 +525,9 @@ def muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_V1_PON,dbsnp_vcf
             print "RUNNING MUTECT2 IN TUMOR-ONLY MODE"
             #mutect2_command = "java -jar %s --analysis_type MuTect2 --reference_sequence %s -L %s --normal_panel %s --cosmic %s --dbsnp %s --input_file:tumor %s -o %s.mutect2.somatic.unfiltered.vcf --max_alt_allele_in_normal_fraction 0.1 -nct 8 --minPruning 10 --kmerSize 60" % (GATK_LATEST_EXE,REF_FASTA,REGIONS_FILE,MUTECT2_V1_PON,cosmic_vcf,dbsnp_vcf,tumor_bam,base_output)
             mutect2_command = "java -jar %s --analysis_type MuTect2 --reference_sequence %s -L %s --normal_panel %s --cosmic %s --dbsnp %s --input_file:tumor %s -o %s.mutect2.somatic.unfiltered.vcf -nct 8 --minPruning 10 --kmerSize 60" % (GATK_LATEST_EXE,REF_FASTA,REGIONS_FILE,MUTECT2_V1_PON,cosmic_vcf,dbsnp_vcf,tumor_bam,base_output)
-        elif MUTECT2_V1_PON is None:
-            mutect2_command = "java -jar %s --analysis_type MuTect2 --reference_sequence %s -L %s --cosmic %s --dbsnp %s --input_file:normal %s --input_file:tumor %s -o %s.mutect2.somatic.unfiltered.vcf --max_alt_allele_in_normal_fraction 0.1 -nct 8 --minPruning 10 --kmerSize 60" % (GATK_LATEST_EXE,REF_FASTA,REGIONS_FILE,cosmic_vcf,dbsnp_vcf,normal_bam,tumor_bam,base_output)
+
         else:
             mutect2_command = "java -jar %s --analysis_type MuTect2 --reference_sequence %s -L %s --normal_panel %s --cosmic %s --dbsnp %s --input_file:normal %s --input_file:tumor %s -o %s.mutect2.somatic.unfiltered.vcf --max_alt_allele_in_normal_fraction 0.1 -nct 8 --minPruning 10 --kmerSize 60" % (GATK_LATEST_EXE,REF_FASTA,REGIONS_FILE,MUTECT2_V1_PON,cosmic_vcf,dbsnp_vcf,normal_bam,tumor_bam,base_output)
-
 
         print "MUTECT2 SOMATIC CALLING COMMAND:", mutect2_command
         log = open('%s.mutect2.log' % base_output, 'w')
@@ -607,335 +599,151 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
             panel = '50 gene panel'
         elif panel=='CCP' or panel=='409':
             panel = '409 gene panel'
-        elif panel=='OCP' or panel=='OCA':
+        elif re.search("OCP", panel) or re.search("OCA", panel):
             panel = 'Oncomine panel'
         else:
             panel = panel
         
         return panel
     
-    def check_if_tpl_spreadsheet_exists():
-        """Checks if TPL spreadsheet is mounted and exists."""
-        if os.path.isfile("/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/TP Stats 2010-2017/2017 TP Stats.xlsx"):
-            return "/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/TP Stats 2010-2017/2017 TP Stats.xlsx"
-        else:
-            print "WARNING: Could not find the TP spreadsheet.  Attempting to troubleshoot the error..."
-            if os.path.isdir("/media/Tumor_Profiling_N_Drive/"):
-                sys.exit("ERROR: N Drive is successfully mounted.  Where did the sheet go?  Re-check the filename")
+    def define_panel_version(panel):
+        """Defines panel version based on abbrevation."""
+        
+        panel_version = re.search("v(\d)", panel)
+        try:
+            panel_version = str(round(float(panel_version.group(1)), 2))
+        except:
+            # Panel version abbreviation is not included, check to see if panel name should always be v1.0
+            
+            # These panels do not have anything past v1.0 yet
+            v1_panels = re.compile("HSM|CCP|TFNA")
+            if v1_panels.search(panel):
+                panel_version = "1.0"
             else:
-                sys.exit("ERROR: N Drive is not mounted.  Exiting...")
-            
-            return None
-    
-    
-    def col2num(col):
-        """Converts Excel column in letter format to column number."""
-        num = 0
-        for c in col:
-            if c in string.ascii_letters:
-                num = num * 26 + (ord(c.upper()) - ord('A')) + 1
-        return num
-    
-    def append_entry_to_dict(sheet_obj, sheet_entries):
-        """Append entry in spreadsheet to dict."""
-        
-        def get_max_column_and_row(sheet_obj):
-            """Takes a spreadsheet object and returns a list with [max_column,max_row].
-            Bases max_row and max_column calculations on first "None" that is encountered.
-            """
-        
-            row_counter = 1
-            
-            for row in sheet_obj.iter_rows():
-                if row_counter > 1:
-                    # if column 1 is None, max_row = this row
-                    if sheet_obj.cell(row=row_counter, column=1).value is not None:
-                        max_row = sheet_obj.cell(row=row_counter, column=1).row
-                    else:
-                        break
+                if re.search("OCP", panel) or re.search("OCA", panel):
+                    # All recent analyses with OCP have been 2.0
+                    # panel version autodetection was not supported until v1.3.2 
+                    panel_version = "2.0"
                 else:
-                    for _cell in row:
-                        if _cell.value is None or _cell.value == "":
-                            break
-                        else:
-                            max_column = _cell.column
-                row_counter += 1
-    
-            try:
-                max_column
-            except NameError:
-                max_column = sheet_obj.max_column
-            
-            try:
-                max_row
-            except NameError:
-                max_row = 1
-                
-    
-            return [max_column, max_row]
-        
-        
-        max_column, max_row = get_max_column_and_row(sheet_obj)    
-        
-        headers = []
-        row_counter = 1
-        for row in sheet_obj.iter_rows("A1:%s%s" % (max_column, max_row)):
-            if row_counter > 1:
-                values = []
-                for cell in row:
-                    values.append(cell.value)
-                sheet_entries[sheet_name].append(dict(zip(headers,values)))
-            else:
-                for cell in row:
-                    headers.append(cell.value)
-                    if cell.value is None: # or cell.value == "":
-                        break
-            row_counter += 1
+                    # For unlisted panels
+                    panel_version = "1.0"
+
+        return panel_version
     
     def reformat_copath_id_format(test_string):
         """Reformats coPath ID if in X15-03344 format with 0 before numbers.
         Sometimes, the ID is entered into the spreadsheet without a preceding 0.
         """
-        
-        if re.search("-\d{5}", test_string):
-            if re.search("-0\d{4}", test_string):
-                "WARNING: Reformatting coPath ID"
-                match = re.search("(\w+?)-0(\d{4})", test_string)
-                id_part_one = match.group(1)
-                id_part_two = match.group(2)
-                test_string = "%s-%s" % (id_part_one, id_part_two)
-                return [test_string, True]
+        format = long
+        if re.search("-\d+", test_string):
+            match = re.search("(\w+?)-(\d+)", test_string)
+            id_part_one = match.group(1)
+            id_part_two = match.group(2)
+            if len(id_part_two) == 5:
+                print "WARNING: BASENAME IDENTIFIED AS COPATH_ID (LONG) - REFORMATTING TO COPATH_ID (SHORT)"
+                reformatted_id = id_part_one + "-" + id_part_two.lstrip("0")
+                reformatted_id_bool = [reformatted_id, True]
+            elif len(id_part_two) > 5:
+                print "ERROR: COPATH_ID not in recognize format"
+                reformatted_id = None
+                reformatted_id_bool = [reformatted_id, False]
             else:
-                return [test_string, False]
-        elif re.search("-\d{4}", test_string):
-            match = re.search("(.+)-(\d){4}", test_string)
-            return [test_string, False]
+                print "WARNING: BASENAME IDENTIFIED AS COPATH_ID (SHORT) - REFORMATTING TO COPATH_ID (LONG)"
+                leading_zero_count = 5 - len(id_part_two)
+                reformatted_id = id_part_one + "-" + ("0"*leading_zero_count) + id_part_two
+                reformatted_id_bool = [reformatted_id, True]
         else:
-            "WARNING: %s is not in proper format.  Chances are we won't find any automatic annotations when searching." % test_string
-            return [test_string, False]
-    
-    def write_specimen_json(basename, output_match_dict):
-        """Write $basename.specimen.json."""
-        
-        try:
-            with open('%s.specimen.json' % basename, 'w') as specimen_json_out:
-                json.dump(output_match_dict, specimen_json_out)
-            print "SUCCESS: %s.specimen.json was created" % basename       
-        except:
-            print "FAIL: Could not create %s.specimen.json" % basename
-    
-    def dict_clean(items):
-        result = {}
-        for key, value in items:
-            if value is None:
-                value = 'Unknown'
-            result[key] = value
-        return result
-    
-    def search_sheet_entries_for_id(copath_test, sheet_name, sheet_entries):
-        """Search sheet_entries dict for query ID."""
-         
-        output_match = {}
-        for sheet_name in sheet_entries.keys():
-            for entry in sheet_entries[sheet_name]:
-
-                # need these headers to populate some output in specimen.json
-                # will try to use as much info from standard pipeline variables (e.g. panel, pipeline_version)
-                necessary_headers = ['CoPath #',
-                                     'laser/ manual MD',
-                                     '% Malignant cells',
-                                     'Tumor type',
-                                     'Tumor Source']
-                missing_headers = []
-                
-                    
-                if all(x in entry.keys() for x in necessary_headers):
-                    if entry['CoPath #'] == copath_test:
-                        #print "SUCCESS: All headers detected"
-                        #print "SUCCESS: We have a match in the TP spreadsheet"
-                
-                        try:
-                            output_match['pipeline_version'] = pipeline_version
-                        except:
-                            #print "FAIL: Could not define 'pipeline_version'"
-                            output_match['pipeline_version'] = ''
-                        try:
-                            output_match['dissection'] = entry['laser/ manual MD']
-                        except:
-                            #print "FAIL: Could not define 'dissection'"
-                            output_match['dissection'] = ''
-                        try:
-                            output_match['malignant_cells'] = "{0:.0f}%".format(float(entry['% Malignant cells']) * 100)
-                        except:
-                            #print "FAIL: Could not define 'malignant_cells'"
-                            output_match['malignant_cells'] = ''
-                        try:
-                            output_match['tumor'] = entry['Tumor type'] + ", " + entry['Tumor Source']
-                        except:
-                            #print "FAIL: Could not define 'tumor'"
-                            output_match['tumor'] = ''
-                        try:
-                            output_match['normal'] = entry['Normal Source']
-                        except:
-                            #print "FAIL: Could not define 'normal'"
-                            output_match['normal'] = ''
-                        try:
-                            output_match['requested_by'] = entry['Requesting Physician']
-                        except:
-                            #print "FAIL: Could not define 'requested_by'"
-                            output_match['requested_by'] = ''
-                        try:
-                            output_match['panel'] = panel
-                        except:
-                            #print "FAIL: Could not define 'requested_by'"
-                            output_match['panel'] = ''
-                        try:
-                            output_match['panel_version'] = '1.0'
-                        except:
-                            #print "FAIL: Could not define 'panel_version'"
-                            output_match['panel_version'] = '1.0'
-                    else:
-
-                        output_match['pipeline_version'] = pipeline_version
-                        output_match['dissection'] = ''
-                        output_match['malignant_cells'] = ''
-                        output_match['tumor'] = ''
-                        output_match['normal'] = ''
-                        output_match['requested_by'] = ''
-                        output_match['panel'] = panel
-                        output_match['panel_version'] = '1.0'
-
-                else:
-                    for necessary_header in necessary_headers:
-                        if not necessary_header in entry.keys():
-                            if necessary_header != 'CoPath#' and 'CoPath #' in entry.keys():
-                                # Let's slowly try to parse out certain values
-                                try:
-                                    output_match['pipeline_version'] = pipeline_version
-                                except:
-                                    #print "FAIL: Could not define 'pipeline_version'"
-                                    output_match['pipeline_version'] = ''
-                                try:
-                                    output_match['dissection'] = entry['laser/ manual MD']
-                                except:
-                                    #print "FAIL: Could not define 'dissection'"
-                                    output_match['dissection'] = ''
-                                try:
-                                    output_match['malignant_cells'] = "{0:.0f}%".format(float(entry['% Malignant cells']) * 100)
-                                except:
-                                    #print "FAIL: Could not define 'malignant_cells'"
-                                    output_match['malignant_cells'] = ''
-                                try:
-                                    output_match['tumor'] = entry['Tumor type'] + ", " + entry['Tumor Source']
-                                except:
-                                    #print "FAIL: Could not define 'tumor'"
-                                    output_match['tumor'] = ''
-                                try:
-                                    output_match['normal'] = entry['Normal Source']
-                                except:
-                                    #print "FAIL: Could not define 'normal'"
-                                    output_match['normal'] = ''
-                                try:
-                                    output_match['requested_by'] = entry['Requesting Physician']
-                                except:
-                                    #print "FAIL: Could not define 'requested_by'"
-                                    output_match['requested_by'] = ''
-                                try:
-                                    output_match['panel'] = panel
-                                except:
-                                    #print "FAIL: Could not define 'requested_by'"
-                                    output_match['panel'] = ''
-                                try:
-                                    output_match['panel_version'] = '1.0'
-                                except:
-                                    #print "FAIL: Could not define 'panel_version'"
-                                    output_match['panel_version'] = '1.0'
-                                    
-                            else:
-                                # Create default specimen.json file if CoPath # does not exist in spreadsheet
-                                #print "FAIL: Need CoPath # to retrieve sample information.  Creating default specimen.json file"
-                                
-                                try:
-                                    output_match['pipeline_version'] = pipeline_version
-                                except:
-                                    pass
-                                    #print "FAIL: Could not define 'pipeline_version'"
-                                try:
-                                    output_match['dissection'] = ""
-                                except:
-                                    pass
-                                    #print "FAIL: Could not define 'dissection'"
-                                try:
-                                    output_match['malignant_cells'] = ""
-                                except:
-                                    pass
-                                    #print "FAIL: Could not define 'malignant_cells'"
-                                try:
-                                    output_match['tumor'] = ""
-                                except:
-                                    pass
-                                    #print "FAIL: Could not define 'tumor'"
-                                try:
-                                    output_match['normal'] = ""
-                                except:
-                                    pass
-                                    #print "FAIL: Could not define 'normal'"
-                                try:
-                                    output_match['panel'] = panel
-                                except:
-                                    pass
-                                    #print "FAIL: Could not define 'requested_by'"
-                                try:
-                                    output_match['panel_version'] = '1.0'
-                                except:
-                                    output_match['panel_version'] = '1.0'
-    
-        return output_match
-    
-    panel = redefine_Downstream_panel_name(panel)
-    # Check if TP stats spreadsheet exists
-    spreadsheet_path = check_if_tpl_spreadsheet_exists()
-    
-    if spreadsheet_path:
-        # Load workbook
-        spreadsheet = load_workbook(spreadsheet_path, data_only=True)
-        # Get sheet names
-        sheet_names = spreadsheet.get_sheet_names()
-        # Remove sheet names that aren't named
-        for sheet_name in list(sheet_names):
-            if re.search("Sheet", sheet_name):
-                sheet_names.remove(sheet_name)
-        # Initialize defaultdict
-        sheet_entries = defaultdict(list)
-        # Pop sheet_names that are incompatible with pipeline
-        sheet_names.remove("TaqMan Cases")
-        sheet_names.remove("PD-L1 Cases")
-        
-        # Create a dict of entries from each sheet
-        print "Checking in the following sheet names for matching case IDs: " + ", ".join(sheet_names)
-        for sheet_name in sheet_names:
-            sheet_obj = spreadsheet.get_sheet_by_name(sheet_name)
-            append_entry_to_dict(sheet_obj, sheet_entries)
-
-
-    # Search dict entries for ID that matches query ID
-    output_match = search_sheet_entries_for_id(basename, sheet_name, sheet_entries)
-    
-    if not output_match:
-        reformatted_basename, reformatted_bool = reformat_copath_id_format(basename)
-        if reformatted_bool is True:
-            output_match = search_sheet_entries_for_id(reformatted_basename, sheet_name, sheet_entries)
-        else:
-            print "WARNING: No matches on %s" % basename
-            write_specimen_json(basename, output_match)
+            print "ERROR: Basename is not in COPATH_ID format."
+            reformatted_id = None
+            reformatted_id_bool = [reformatted_id, False]
             
+        return reformatted_id_bool
+
     
-    if output_match:
-        dict_str = json.dumps(output_match)
-        output_match = json.loads(dict_str, object_pairs_hook=dict_clean)
+    def pull_basename_from_TPTracker(basename, pipeline_version, panel_version):
+    
+        db = MySQLdb.connect("localhost","root","*23Ft198","tumor_profiling_lab")
+        cursor = db.cursor()
+    
+        sql = "SELECT copath_id, sequencing_panel, tumor_type, tumor_source, germline_sample, germline_source, microdissection_type, percent_malignant_cells FROM sequencing_cases \
+               WHERE copath_id = '%s' \
+               ORDER BY req_date DESC" % basename
+    
+        try:
+           # Execute the SQL command
+            cursor.execute(sql)
+           # Fetch all the rows in a list of lists.
+            results = cursor.fetchall()
+            if len(results) == 0:
+                reformatted_id, reformatted_bool = reformat_copath_id_format(basename)
+                if reformatted_bool is True:
+                    print "WARNING: No matches on %s...trying reformatted ID as %s" % (basename, reformatted_id)
+                    sql = "SELECT copath_id, sequencing_panel, tumor_type, tumor_source, germline_sample, germline_source, microdissection_type, percent_malignant_cells FROM sequencing_cases \
+                           WHERE copath_id = '%s' \
+                           ORDER BY req_date DESC" % reformatted_id
+                           
+                    cursor.execute(sql)
+                    results = cursor.fetchall()
+                    if len(results) > 0:
+                        result_set = results[0]
+                else:
+                    print "WARNING: No matches on %s.  Basename is not in correct CoPath ID format.  Stop contacting TPTracker." % basename
+            else:
+                result_set = results[0]
+        except Exception, e:
+            print str(e)
+            print "Error: unable to fetch data"
+    
+        # disconnect from server
+        db.close()
+        
+        specimen_info = defaultdict(lambda: "")
+        specimen_info['panel'] = panel
+        specimen_info['panel_version'] = panel_version
+        specimen_info['pipeline_version'] = pipeline_version
+        try:
+            result_set
+        except NameError:
+    
+            specimen_info['normal'] = ""
+            specimen_info['tumor'] = ""
+            specimen_info['malignant_cells'] = ""
+            specimen_info['dissection'] = ""  
+        else:
+            mysql_fields = ['copath_id',
+                            'sequencing_panel',
+                            'tumor_type',
+                            'tumor_source',
+                            'germline_sample',
+                            'germline_source',
+                            'microdissection_type',
+                            'percent_malignant_cells']
+            mysql_fields = dict(zip(mysql_fields,result_set))
+            
+            # Handle MySQL NULL/None values
+            for k, v in mysql_fields.iteritems():
+                if v is None:
+                    mysql_fields[k] = ""
+            
+            specimen_info['tumor'] = ", ".join([mysql_fields['tumor_type'], mysql_fields['tumor_source']])
+            specimen_info['normal'] = mysql_fields['germline_sample']
+            specimen_info['malignant_cells'] = mysql_fields['percent_malignant_cells']
+            specimen_info['dissection'] = mysql_fields['microdissection_type']
+            
+        if re.search("N/A", str(specimen_info['normal'])) or specimen_info['normal'] is None:
+            specimen_info['normal'] = "None"
+        
+        with open('%s.specimen.json' % basename, 'w') as outfile:
+            json.dump(dict(specimen_info), outfile)
+            
         pp = PrettyPrinter(indent=4)
-        pp.pprint(output_match)
-        write_specimen_json(basename, output_match)
+        pp.pprint(dict(specimen_info))
+    
+    panel_version = define_panel_version(panel)
+    panel = redefine_Downstream_panel_name(panel)
+    pull_basename_from_TPTracker(basename, pipeline_version, panel_version)
+    
+
 
 def extract_fusion_VCF_information(vcf):
     """Extracts information from the ionreporter.fusions.vcf file."""
@@ -972,18 +780,112 @@ def extract_fusion_VCF_information(vcf):
 
     return fusion_dict
 
-def run_pipeline_parser(base_output, PP_PARSER_EXE):
-    """Run pipeline-parser script to format raw pipeline files into spreadsheet."""
-    try:
-        subprocess.call("python %s -a --output-basename %s.unfiltered" % (PP_PARSER_EXE, base_output), shell=True)
-    except:
-        print "ERROR: pipeline-parser.py failed"
+class IR_CNV_module:
+
+    def __init__(self, remote_dir_base_path):
+        self.tiles_path = remote_dir_base_path + "/outputs/CnvActor-00/diffCoverage.seg"
+
+    def execute_CNV_module(self, REGIONS_FILE, RSCRIPT_EXE, CNV_PLOT_EXE, SNPSIFT_EXE, opts, cnv_vcf):
+
+        def extract_CNV_segments_from_VCF(self, SnpSift, cnv_vcf, base_output):
+            """Extracts CNV segment information from the IR CNV .vcf.  This is a more detailed approach than pulling the CN_Segments.seg file from IR."""
+            
+            try:
+                if os.path.isfile("./%s" % cnv_vcf):
+                    subprocess.call("java -jar %s extractFields %s CHROM POS END LEN GEN[0].CN NUMTILES CONFIDENCE PRECISION > %s.cnv.seg.detailed.tsv" % (SnpSift, cnv_vcf, base_output), shell=True)
+                    cnv_seg_detailed = "%s.cnv.seg.detailed.tsv" % base_output
+                    return cnv_seg_detailed
+                else:
+                    print "ERROR: Could not find %s." % cnv_vcf
+                    print "ERROR: Not extracting fields for CNVs."
+                    return None
+            except Exception, e:
+                print "ERROR: Unexpected error during CNV field extraction."
+                print "ERROR: %s" % str(e)
+                return None
+        
+        def IR_download_diffCoverage(self, variant_link, basename, tmp_output_name):
+            """Downloads the diffCoverage.seg segment files from the IR server."""
+            
+            try:
+                proc = subprocess.Popen(["""curl -k -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o %s; \
+                                            unzip -q %s; \
+                                            rm -rf %s; \
+                                            mv diffCoverage.seg %s.diffCoverage.seg; \
+                                            rm -rf VER*.log""" % (variant_link,tmp_output_name, tmp_output_name, tmp_output_name, basename)],shell=True,stdout=subprocess.PIPE)
+                output, err = proc.communicate()
+                tiles_file = "%s.diffCoverage.seg" % basename
+                
+                return tiles_file
+                
+            except Exception, e:
+                print str(e)
+                print "Unable to download and/or unzip IonReporter Fusion files.  Aborting..."
+                
+                return None
+        
+        def prepare_cnv_directory(self):
+            # Create 'cnv' directory        
+            mkdir_p("%s/cnv" % os.getcwd())
+            
+            # Change to cnv directory
+            os.chdir('cnv')
 
 
-def filter_variant_spreadsheet(base_output, FILTER_VARIANTS_EXE):
-    """Run filter_variants.py script to filter the final spreadsheet."""
-
-    if os.path.isfile("%s.unfiltered.xlsx" % base_output):
-        subprocess.call("python %s -i %s.unfiltered.xlsx -o %s.xlsx --minimum-vaf=0.05" % (FILTER_VARIANTS_EXE, base_output, base_output), shell=True)
-    else:
-        print "WARNING: Could not find unfiltered variant spreadsheet.  Not performing final filtering of variants"
+        def plot_CNVs(self):
+            log = open('./%s.cnv.log' % opts.base_output, 'a+')
+            cmd = "%s %s %s %s %s %s" % (RSCRIPT_EXE, CNV_PLOT_EXE, opts.base_output, tiles_file, segment_file, REGIONS_FILE)
+            p = subprocess.Popen(cmd.split(" "), stdout = log, stderr = log)
+            p.communicate()
+        
+        
+        
+        print """#--------------------COPY NUMBER VARIANT DETECTION--------------------#"""
+        
+        prepare_cnv_directory(self)
+        tiles_file = IR_download_diffCoverage(self, self.tiles_path, opts.base_output, "diffCoverage.seg.tmp.zip")
+        segment_file = extract_CNV_segments_from_VCF(self, SNPSIFT_EXE, "../"+cnv_vcf, opts.base_output)
+        # If there are no tiles or segment files, don't plot.
+        if (tiles_file is not None) and (segment_file is not None):
+            # plot CNVs
+            plot_CNVs(self)
+        os.chdir("..")
+            
+class QC_module:
+    
+    def execute_FASTQC(self, opts):
+        """Execute FASTQC for BAMs in case folder."""
+        
+        print """#--------------------FASTQC QUALITY CONTROL--------------------#"""
+        
+        # Gather BAM list from current working directory
+        bam_list = []
+        for bam in os.listdir(os.getcwd()):
+            if bam.endswith(".bam"):
+                bam_list.append(bam)
+        
+        # make FASTQC directory if it doesn't exist
+        try:
+            os.makedirs("./FASTQC")
+        except OSError as e:
+            if e.errno != errno.EEXIST:
+                raise
+        
+        
+        log = open('./FASTQC/%s.fastqc.log' % opts.base_output, 'a+')
+        
+        # Run FASTQC command on all bams in directory using 8 threads    
+        cmd = "fastqc -f bam -t 8 -o FASTQC %s" % " ".join(bam_list)
+        p = subprocess.Popen(cmd.split(" "), stdout = log, stderr = log)
+        p.communicate()
+        
+        # Close log
+        log.close()
+        
+        # Delete .zip file created by FASTQC
+        # We only need the uncompressed output directory for review
+        fastqc_dir = os.path.join(os.getcwd(), "FASTQC")
+        for f in os.listdir(fastqc_dir):
+            if f.endswith(".zip"):
+                os.remove(os.path.join(fastqc_dir, f))
+    

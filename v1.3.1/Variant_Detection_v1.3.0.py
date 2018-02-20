@@ -104,8 +104,7 @@ STRELKA_EXE = '/home/michael/bin/strelka/bin/configureStrelkaWorkflow.pl'
 
 # CUSTOM EXECUTABLE
 
-PP_PARSER_EXE = '/home/michael/YNHH/Code/Github-mdeletto/Targeted-NGS-Pipeline/v%s/pipeline-parser.py' % vers
-FILTER_VARIANTS_EXE = '/home/michael/YNHH/Code/Github-mdeletto/Targeted-NGS-Pipeline/v%s/filter_variants.py' % vers
+PP_PARSER = '/home/michael/YNHH/Code/Github-mdeletto/Targeted-NGS-Pipeline/v1.3.0/pipeline-parser.py'
 
 # REFERENCE FILES
 
@@ -120,16 +119,12 @@ MUTECT_V1_PON = "/home/michael/Development/MuTect/OCP.mutect.PON.vcf"
 MUTECT2_PON_OCP = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/OCP/OCP.mutect2.PON.vcf"
 MUTECT2_PON_CCP = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/CCP/CCP.mutect2.PON.vcf"
 MUTECT2_PON_TFNA = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/TFNA/PopulationNormal_TFNA_v1.vcf"
-MUTECT2_PON_HSM = "/home/michael/YNHH/Reference_Files/Population_Normal/HSM/v1/VCFs/PopulationNormal_HSM_v1.vcf"
-MUTECT2_PON_AMGEN = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/AMGEN/PopulationNormal_AMGEN_v1.vcf"
-
 
 # POPULATION NORMALS
 
 POPULATION_NORMAL_BAM_OCP = '/home/michael/YNHH/Reference_Files/Population_Normal/PopulationNormal_OCP_v2.bam'
 POPULATION_NORMAL_BAM_TFNA = '/home/michael/YNHH/Reference_Files/Population_Normal/TFNA/PopulationNormal_TFNA_v1.bam'
-POPULATION_NORMAL_BAM_HSM = '/home/michael/YNHH/Reference_Files/Population_Normal/PopulationNormal_HSM_v1.bam'
-POPULATION_NORMAL_BAM_AMGEN = '/home/michael/YNHH/Reference_Files/Population_Normal/AMGEN/v1/PopulationNormal_AMGEN_v1.bam'
+#POPULATION_NORMAL_BAM_OCP = '/home/michael/YNHH/Reference_Files/Population_Normal/simulated/Population_Normal.OCP.v1.simulated.bam'
 POPULATION_NORMAL_BAM_CCP = '/home/michael/YNHH/Reference_Files/Population_Normal/Population_Normal_PGM_v2.CCP.bam'
 
 # OTHER GLOBAL VARIABLES
@@ -169,12 +164,8 @@ def main():
                     opts.normal = POPULATION_NORMAL_BAM_CCP
                 elif opts.regions == "TFNA":
                     opts.normal = POPULATION_NORMAL_BAM_TFNA
-                elif opts.regions == "AMGEN":
-                    opts.normal = POPULATION_NORMAL_BAM_AMGEN
-                elif opts.regions == "OCP" or opts.regions == "OCA":
+                else:
                     opts.normal = POPULATION_NORMAL_BAM_OCP
-                elif opts.regions == "HSM" or opts.regions == "CHPv2":
-                    opts.normal = POPULATION_NORMAL_BAM_HSM
         else:
             opts.tumor = pull_BAM_from_url(opts.tumor,opts.base_output,"tumor")
             # If input is remote and Population Normal exists in the name for the normal, use Population Normal BAM as normal and select appropriate PON for MuTect2
@@ -182,21 +173,14 @@ def main():
             if re.search("Population", opts.normal):
                 if opts.regions == "CCP":
                     opts.normal = POPULATION_NORMAL_BAM_CCP
-                elif opts.regions == "TFNA":
-                    opts.normal = POPULATION_NORMAL_BAM_TFNA
-                elif opts.regions == "AMGEN":
-                    opts.normal = POPULATION_NORMAL_BAM_AMGEN
-                elif opts.regions == "OCP" or opts.regions == "OCA" or opts.regions == "OCPv2":
+                else:
                     opts.normal = POPULATION_NORMAL_BAM_OCP
-                elif opts.regions == "HSM" or opts.regions == "CHPv2":
-                    opts.normal = POPULATION_NORMAL_BAM_HSM
             else:
                 opts.normal = pull_BAM_from_url(opts.normal,opts.base_output,"normal")
     
     # Create index for BAMs
     pysam.index(opts.tumor) # create index for tumor
-    if not re.search("Population", opts.normal, re.IGNORECASE):
-        pysam.index(opts.normal) # create index for normal
+    pysam.index(opts.normal) # create index for normal
     
     # Create normal-tumor mpileup (RETIRED WITH VARSCAN in v1.3)
     #samtools_mpileup(SAMTOOLS_EXE,opts.tumor,opts.normal,opts.base_output,REFERENCE_FASTA,REGIONS_FILE)
@@ -283,6 +267,9 @@ def main():
                 print "Fusion VCF local input"
                 rename_fusion_vcf(opts.ionreporter_fusion_vcf,opts.base_output) # Rename fusions.vcf file as (basename).ionreporter.fusions.vcf
     
+    
+        
+    
         # Check for ionreporter.fusions.vcf
         
         ###  PROCESS FUSIONS VCF AND EXTRACT INFO ###
@@ -303,6 +290,7 @@ def main():
         ionreporter_somatic_unfiltered_vcf = IR4_4_VCF_fix(ionreporter_somatic_unfiltered_vcf,opts.base_output)
         # Remove the tmp IR somatic VCF
         subprocess.call("rm %s" % opts.ionreporter_somatic_vcf, shell=True)
+    
 
     
     #-------------------------------------------------------------------------------------------
@@ -325,29 +313,19 @@ def main():
     #---MUTECT VARIANT CALLING---#
          
     #mutect_vcf = muTect_caller_command(MUTECT_EXE,REGIONS_FILE,MUTECT_V1_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
-    if opts.ionreporter_only is False:
-        if opts.regions == "CCP":
-            MUTECT2_PON = MUTECT2_PON_CCP
-            mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
-        elif opts.regions == "TFNA":
-            MUTECT2_PON = MUTECT2_PON_TFNA
-            mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
-        elif opts.regions == "AMGEN":
-            MUTECT2_PON = MUTECT2_PON_AMGEN
-            mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
-        elif opts.regions in ["OCP","OCA","OCPv2"]:
-            MUTECT2_PON = MUTECT2_PON_OCP
-            mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
-        elif opts.regions in ["HSM", "CHPv2"]:
-            MUTECT2_PON = MUTECT2_PON_HSM
-            mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
-        elif opts.regions == "WhEx":
-            MUTECT2_PON = None
-            mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output) 
-        else:
-            if opts.ionreporter_only is False:
-                
-                sys.exit("ERROR: Selected panel (%s) does not have PON for Mutect2" % (opts.regions))
+    if opts.regions == "CCP":
+        MUTECT2_PON = MUTECT2_PON_CCP
+        mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
+    elif opts.regions == "TFNA":
+        MUTECT2_PON = MUTECT2_PON_TFNA
+        mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
+    elif opts.regions in ["CHPv2","HSM","OCP","OCA"]:
+        MUTECT2_PON = MUTECT2_PON_OCP
+        mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
+    else:
+        if opts.ionreporter_only is False:
+            
+            sys.exit("ERROR: Selected panel (%s) does not have PON for Mutect2" % (opts.regions))
              
     #---STRELKA VARIANT CALLING---#
     
@@ -376,6 +354,8 @@ def main():
 #                                         """,
 #                                         gatk_vcf]
 #                                        )
+
+
 
     #-------------------------------------------------------------------------------------------
     #----------------------VARIANT (VCF) FILTERING AND ANNOTATION-------------------------------
@@ -425,6 +405,10 @@ def main():
                                    # first index = output basename suffix
                                    # second index = SnpSift filter expression
                                    # third index = vcf input
+    
+# (FDP[*] >= 20) | (DP[*] >= 20)
+# ((FAO[*] >= 2) | (AO[*] >= 2)) 
+# ((GEN[1].FDP[*] >= 5) | (GEN[1].DP[*] >= 5)) 
 
                                    ["ionreporter.somatic",
                                     """(HRUN[*] <= 6)
@@ -581,11 +565,11 @@ def main():
     
     extra_file_cleanup()
 
-    run_pipeline_parser(opts.base_output, PP_PARSER_EXE)
-
-    time.sleep(10)
-
-    filter_variant_spreadsheet(opts.base_output, FILTER_VARIANTS_EXE)
+    try:
+        print "RUNNING pipeline-parser.py"
+        subprocess.call("python %s -a --output-basename %s.unfiltered" % (PP_PARSER, opts.base_output), shell=True)
+    except:
+        print "ERROR: pipeline-parser.py failed"
     
     time.sleep(10)
     

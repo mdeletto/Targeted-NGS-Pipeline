@@ -25,7 +25,7 @@ global opts
 
 desc="""IR_heartbeat.py acts as a gateway for initiating the bioinformatics analyses (variant calling, annotation, and other QC) for IonTorrent data.  The script contacts the IR server, pulls in necessary info, initiates the downstream bioinformatics analyses, and logs the activity in Elasticsearch."""
 usage="./IR_heartbeat -d <analysis_date>"
-version="1.3.0"
+version="1.3.2"
 parser = optparse.OptionParser(description=desc,usage=usage,version=version)
  
 group = optparse.OptionGroup(parser, "General options")
@@ -34,7 +34,7 @@ group.add_option("--ionreporter_url","-i", help="IP address or hostname of IR se
 group.add_option("--analysis_date","-d", help="Pull IR analyses from this date.  YYYY-mm-dd format required (e.g. %default).  Default date for analysis is today!",dest='date',action='store',default=datetime.datetime.strftime(datetime.date.today(), "%Y-%m-%d"))
 group.add_option("--days", help="Number of days to look back at for IR analyses.  Default is to use all IR analyses.  However, by reducing the number of days, runtime will be faster.",dest='days',action='store',default=None)
 group.add_option("--download_bams_only","", help="Pull tumor and normal bams for a given analysis and quit",dest='bams_only',action='store_true',default=False)
-group.add_option("--pipeline_version","-p", help="Pipeline version to use.  Default is to use the latest pipeline (%default)",dest='pipeline_version',action='store',default="1.3.0")#datetime.date.today())
+group.add_option("--pipeline_version","-p", help="Pipeline version to use.  Default is to use the latest pipeline (%default)",dest='pipeline_version',action='store',default=version)#datetime.date.today())
 group.add_option("--additional-pipeline-arguments", help="Arguments to pass to the pipeline for additional control over the pipeline.",dest='pipeline_arguments',action='store',default=None)#datetime.date.today())
 group.add_option("--force","-f", help="Force unsupported panels through the pipeline anyway.  NOT RECOMMENDED.",dest='force',action='store_true',default=False)
 group.add_option("--skip-es-submit", help="Skip submitting the case ID to ElasticSearch.  Default=[%default]",dest='skip_es_submit',action='store_true',default=False)
@@ -48,7 +48,17 @@ parser.add_option_group(group)
 #---PRESET ENVIRONMENT VARIABLES---#
 ####################################
 
-WORKING_DIRECTORY = "/var/www/TPL/ftp/targetedNGSPipeline/"
+try:
+    if os.path.exists("/media/targetedNGSPipeline/"):
+        if os.access("/media/targetedNGSPipeline/", os.W_OK):
+            WORKING_DIRECTORY = "/media/targetedNGSPipeline/"
+        else:
+            WORKING_DIRECTORY = "/var/www/TPL/ftp/targetedNGSPipeline/"
+    else:
+        WORKING_DIRECTORY = "/var/www/TPL/ftp/targetedNGSPipeline/"
+except:
+    WORKING_DIRECTORY = "/var/www/TPL/ftp/targetedNGSPipeline/"
+
 os.chdir(WORKING_DIRECTORY)
 
 es = Elasticsearch()
@@ -79,13 +89,24 @@ def set_IR_API_key_based_on_url(url):
     return IR_API_KEY
 
 def set_pipeline_version(pipeline_version):
-    supported_versions = ['1.2.1',
-                          '1.3.0']
+    supported_versions = ['v1.2.1',
+                          'v1.3.0',
+                          'v1.3.1',
+                          'v1.3.2',
+                          'next-release']
+    
+    if pipeline_version != 'next-release':
+        pipeline_version = "v" + pipeline_version
     
     if pipeline_version in supported_versions:
-        TARGETED_NGS_PIPELINE = "/home/michael/YNHH/Code/Github-mdeletto/Targeted-NGS-Pipeline/v%s/Variant_Detection_v%s.py" % (pipeline_version, pipeline_version)
+        if pipeline_version == 'next-release':
+            TARGETED_NGS_PIPELINE = "/home/michael/YNHH/Code/Github-mdeletto/Targeted-NGS-Pipeline/%s/Variant_Detection.py" % (pipeline_version, pipeline_version)
+        else:
+            TARGETED_NGS_PIPELINE = "/home/michael/YNHH/Code/Github-mdeletto/Targeted-NGS-Pipeline/%s/Variant_Detection_%s.py" % (pipeline_version, pipeline_version)
     else:
         sys.exit("ERROR: Pipeline Version %s is unsupported" % pipeline_version)
+
+    
     return TARGETED_NGS_PIPELINE
 
 
@@ -144,7 +165,7 @@ def IR_analysis_summary_view():
     else:
         today = datetime.datetime.strptime(opts.date, "%Y-%m-%d")
         today_formatted = today.strftime("%Y-%m-%d")
-        datediff = today - datetime.timedelta(days=(int(opts.days)+1))
+        datediff = today - datetime.timedelta(days=int(opts.days))
         datediff_string = datediff.strftime("%Y-%m-%d")
         
         proc = subprocess.Popen(["""curl -k -H "Authorization:%s" "https://%s/webservices_42/rest/api/analysis?format=json&view=summary&start_date=%s&end_date=%s" 2> /dev/null""" % (IR_API_KEY,"10.80.157.179", datediff_string, today_formatted)],shell=True,stdout=subprocess.PIPE)
@@ -214,7 +235,6 @@ def select_analyses(all_IR_analyses):
                         copath_id = name_split[0]
                         names.append(copath_id.strip())
     
-    
     names = list(set(names))
     print "DETECTED SAMPLE LIST: %s" % ", ".join(names)
     
@@ -259,8 +279,6 @@ def download_bams_from_IR(IR_download_link,IR_download_dir,workflow_dict_key):
     # Downloads BAMs from IonReporter by downloading .rrs files, which contain samples definitions and filepaths on the IR server
     # Samtools is also called to merge BAMs (if more than one BAM exists for a sample) and index BAMs
     
-    print os.getcwd()
-    
     sample_name = workflow_dict_key
     bam_pipeline_flags = defaultdict(lambda: None) # to be passed back via return, to be used for pipeline automation
     bam_pipeline_flags['sample_name'] = sample_name
@@ -284,7 +302,7 @@ def download_bams_from_IR(IR_download_link,IR_download_dir,workflow_dict_key):
     for sample_type,nested_list in bams_to_download.iteritems():
         if not os.path.isfile("%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)) and not os.path.isfile("%s/%s-%s.bam" % (os.getcwd(),sample_name,sample_type)):
             sample_definition_file, bam_link = (i for i in nested_list)
-            proc = subprocess.check_output("""curl -s -O -k -H "Content-Type:application/x-www-form-urlencoded" -H "Authorization:%s" "%s" 2> /dev/null && unzip -o %s """ % (IR_API_KEY,bam_link,sample_definition_file),shell=True)
+            proc = subprocess.check_output("""curl -s -O -k -H "Authorization:%s" "%s" 2> /dev/null && unzip -o %s """ % (IR_API_KEY,bam_link,sample_definition_file),shell=True)
             direct_bam_filepaths = subprocess.check_output("""awk '{print $NF}' %s/%s""" % (os.getcwd(),sample_definition_file),shell=True)
             num_lines = sum(1 for line in open('%s/%s' %(os.getcwd(),sample_definition_file)))
             bam_barcode_paths_and_ids = {}
@@ -346,9 +364,8 @@ def initiate_IR_download(workflow_dict,sample_name):
                                              workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_id'],
                                              opts.url,
                                              IR_API_KEY)
-
-    IR_download_URL = re.search("(http.+?download\?filepath=)(.+)",variant_link, re.IGNORECASE)
-
+    
+    IR_download_URL = re.search("(http.+?download\?filepath=)(.+)",variant_link)
     if IR_download_URL:
         IR_download_link = IR_download_URL.group(1)
         IR_download_dir = IR_download_URL.group(2)
@@ -709,9 +726,53 @@ def run_pipeline():
             
         if re.search("TFNA", str(workflow_dict[key]['panel_name'])):
             command += " --disable_filtering --ionreporter_only"
+     
+        if opts.pipeline_arguments is not None:
+            command += str(opts.pipeline_arguments)
+     
+        command = " ".join(command.split())
+        print command
+        subprocess.call(command, shell=True)
+
+    elif opts.pipeline_version=="1.3.2":
+        if workflow_dict[key]['fusion_analysis']['fusion_analysis_name'] is None or re.search("None", workflow_dict[key]['fusion_analysis']['fusion_analysis_name']):
+            fusion_parameters = ""
+        else:
+            fusion_parameters = """--ionreporter_fusion_url_bool \
+                                   --ionreporter_fusion_analysis_name=%s \
+                                   --ionreporter_fusion_id=%s""" % (workflow_dict[key]['fusion_analysis']['fusion_analysis_name'],
+                                                                    workflow_dict[key]['fusion_analysis']['fusion_analysis_id'] )
+        
+        if workflow_dict[key]['germline_analysis']['germline_analysis_name'] is None or re.search("None", workflow_dict[key]['germline_analysis']['germline_analysis_name']):
+            germline_parameters = ""
+        else:
+            germline_parameters = """--ionreporter_germline_url_bool \
+                                   --ionreporter_germline_analysis_name=%s \
+                                   --ionreporter_germline_id=%s""" % (workflow_dict[key]['germline_analysis']['germline_analysis_name'],
+                                                                    workflow_dict[key]['germline_analysis']['germline_analysis_id'] )
+        
+
+
+        command = """%s \
+            -s All-HC \
+            -c %s \
+            --regions=%s \
+            -t %s \
+            -n %s \
+            -p IonTorrent \
+            --ionreporter_version=4.4 \
+            --ionreporter_somatic_url_bool \
+            --ionreporter_somatic_analysis_name %s \
+            --ionreporter_somatic_id %s \
+            %s %s""" % (TARGETED_NGS_PIPELINE, sample_name, workflow_dict[key]['panel_name'], workflow_dict[key]['tumor_bam_name'],
+                      workflow_dict[key]['normal_bam_name'], workflow_dict[key]['somatic_analysis']['somatic_analysis_name'], workflow_dict[key]['somatic_analysis']['somatic_analysis_id'], fusion_parameters, germline_parameters)                               
+        
+        # For QC samples, we don't want any calls to be filtered based on consequence
+        if re.search("QC", key):
+            command += " --disable_filtering"
             
-        if re.search("WhEx", str(workflow_dict[key]['panel_name'])):
-            command += " --ionreporter_only"
+        if re.search("TFNA", str(workflow_dict[key]['panel_name'])):
+            command += " --disable_filtering --ionreporter_only"
      
         if opts.pipeline_arguments is not None:
             command += str(opts.pipeline_arguments)
@@ -750,7 +811,7 @@ def IR_analysis_control():
                              
                              'Comprehensive Cancer Panel' : {
                                                              'somatic_analysis' : 'required',
-                                                             'germline_analysis' : 'optional',
+                                                             'germline_analysis' : 'required',
                                                              'fusion_analysis' : 'N/A'               
                                                              },
                              
@@ -766,7 +827,7 @@ def IR_analysis_control():
                                         'fusion_analysis' : 'N/A'  
                                          },
                              
-                             "Exome" : {
+                             "WhEx" : {
                                         'somatic_analysis' : 'required',
                                         'germline_analysis' : 'optional',
                                         'fusion_analysis' : 'N/A'  
@@ -777,6 +838,7 @@ def IR_analysis_control():
                                         'germline_analysis' : 'optional',
                                         'fusion_analysis' : 'optional'  
                                        }
+                             
                              }
 
         for panel_name in required_analyses:
@@ -929,7 +991,6 @@ IR_API_KEY = set_IR_API_key_based_on_url(opts.url)
 # Connect to IR server and get basic summary view
 all_IR_analyses = IR_analysis_summary_view()
 
-
 # Split IR analysis names and find unique identifiers
 names = select_analyses(all_IR_analyses)
 
@@ -938,7 +999,6 @@ workflow_dict = {}
 
 # Initialize PrettyPrinter for verbose printing of dictionaries
 pp = pprint.PrettyPrinter(indent=4)
-pp.pprint(all_IR_analyses)
 
 # Cycle through unique identifiers and map to different analyses in the server
 for name in names:
@@ -955,7 +1015,7 @@ for name in names:
         workflow_nested_dict, somatic_dict, germline_dict, fusion_dict, qc_dict = (defaultdict(lambda: None) for i in range(5))
         workflow_dict[name] = workflow_nested_dict
         for analysis in all_IR_analyses:
-            if (re.search(name,analysis['name']) or name==analysis['name'] or re.match(name,analysis['name'])): #and analysis['start_date']==format_date_to_string(opts.date):
+            if (re.search(name,analysis['name']) or name==analysis['name'] or re.match(name,analysis['name'])):
                 # Pass analyses with designated flags
                 pattern = re.compile('BETA|SKIP|FALSE') # Remove 'TEST|RUO'
                 if pattern.search(analysis['name'], re.IGNORECASE):
@@ -978,8 +1038,7 @@ for name in names:
                         
                         # Get base filepath on IR server
                         somatic_base_filepath = determine_IR_basename_filepath(analysis['name'], analysis['id'], opts.url, IR_API_KEY)
-                        print somatic_base_filepath
-                        trash, dirpath = somatic_base_filepath.split("=")
+                        trash, dirpath = somatic_base_filepath.split("filepath=")
                         dirpath = "/".join(dirpath.split("/")[:-1])
                         try:
                             remote_command_output = connect_to_IR_server_and_run_command("grep '##mapd' %s/outputs/AnnotatorActor-00/annotated_variants.vcf" % dirpath)
@@ -988,6 +1047,7 @@ for name in names:
                             qc_dict['mapd'] = mapd
                         except:
                             pass
+                        
                         # Handle repeat analyses by choosing a repeat analysis if it exists.
                         if re.search("repeat", analysis['name'], re.IGNORECASE):
                             repeat_flag = True
@@ -1015,7 +1075,6 @@ for name in names:
                                 somatic_dict['somatic_normal_name'] = analysis['samples']['NORMAL']
                             else:
                                 somatic_dict['somatic_normal_name'] = None
-                                
                             somatic_dict['somatic_workflow'] = analysis['workflow']
                             somatic_dict['somatic_workflow_start_date'] = datetime.datetime.strftime(datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y"), "%Y-%m-%d")
                             
@@ -1074,7 +1133,7 @@ for name in names:
                         
                         # Get base filepath on IR server
                         somatic_base_filepath = determine_IR_basename_filepath(analysis['name'], analysis['id'], opts.url, IR_API_KEY)
-                        trash, dirpath = somatic_base_filepath.split("=")
+                        trash, dirpath = somatic_base_filepath.split("filepath=")
                         dirpath = "/".join(dirpath.split("/")[:-1])
                         remote_command_output = connect_to_IR_server_and_grab_file_contents("%s/outputs/RNACountsActor-00/fusions.vcf" % dirpath)
                         # Extract FUSION QC info

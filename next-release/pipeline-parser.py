@@ -2,7 +2,6 @@
 
 import os
 import re
-import sys
 import pprint
 import json
 import openpyxl
@@ -100,7 +99,7 @@ def main():
                     self.fsrb = float(float(format_dict['FSAF']) / float(int(format_dict['FSAF']) + int(format_dict['FSAR'])))
                     self.rsrb = float(float(format_dict['FSAR']) / float(int(format_dict['FSAF']) + int(format_dict['FSAR'])))
                 except Exception, e:
-                    print "ERROR: Unable to define format fields"
+                    print "ERROR10:10 Unable to define format fields"
                     print str(e)
                     self.fsrb, self.rsrb = ("UNK" for i in range(2))
             elif re.search("mutect2", filename):
@@ -254,6 +253,19 @@ def main():
                     self.imbalance_assay = "" 
                     self.annotation = ""
                     self.rpm = re.search("RPM=(.+?);", line).group(1)
+                    
+            class RNAExonVariantWildType:
+                def __init__(self, split_line, line):
+                    self.variant_id = split_line[2]
+                    self.locus = split_line[0] + ":" + str(split_line[1])
+                    self.genes_and_exons = re.search("(\w+?)\.\w+?\..+?", self.variant_id).group(1)
+                    self.read_count = re.search("READ_COUNT=(\d+);", line).group(1)
+                    self.oncomine_gene_class = ""
+                    self.oncomine_variant_class = ""
+                    self.detection = "See Doc."
+                    self.imbalance_assay = "" 
+                    self.annotation = ""
+                    self.rpm = re.search("RPM=(.+?);", line).group(1)
 
             class GeneExpression:
                 def __init__(self, split_line, line):
@@ -317,6 +329,10 @@ def main():
                 self.imbalance_assay = ImbalanceAssay(split_line, line)
             elif svtype == "GeneExpression":
                 self.gene_expression = GeneExpression(split_line, line)
+            elif svtype == "RNAExonVariant" and re.search("WILD_TYPE_ASSAY=1", line):
+                self.rna_exon_variant_wild_type_assay = RNAExonVariantWildType(split_line, line)
+            elif svtype == "RNAExonVariant" and not re.search("WILD_TYPE_ASSAY=1", line):
+                self.fusion = FusionEntry(split_line, line)
     
     def natural_sort(l): 
         convert = lambda text: int(text) if text.isdigit() else text.lower() 
@@ -412,18 +428,33 @@ def main():
                         # Replace rs IDs if there is a COSMIC ID and there is no minor allele freq
                         elif re.match("COSM", colocated_variant['id'])  and re.match("rs", best_colocated_variant['id']):
                             if 'minor_allele_freq' in best_colocated_variant.keys():
-                                #if not float(best_colocated_variant['minor_allele_freq']) > 0.001:
-                                pass
+                                if float(best_colocated_variant['minor_allele_freq']) < 0.001:
+                                    best_colocated_variant = colocated_variant
                             elif 'exac_maf' in best_colocated_variant.keys():
-                                #if not float(best_colocated_variant['exac_maf']) > 0.001:
-                                pass
+                                try:
+                                    if float(best_colocated_variant['exac_freq']) < 0.001:
+                                        best_colocated_variant = colocated_variant
+                                except:
+                                    best_colocated_variant = colocated_variant
                             elif 'gnomad_maf' in best_colocated_variant.keys():
-                                pass
+                                try:
+                                    if float(best_colocated_variant['gnomad_freq']) < 0.001:
+                                        best_colocated_variant = colocated_variant
+                                except:
+                                    best_colocated_variant = colocated_variant
                             else:
                                 best_colocated_variant = colocated_variant
                         # if we already have a COSMIC ID, just leave it
                         elif re.match("COSM", colocated_variant['id']) and re.match("COSM", best_colocated_variant['id']):
-                            pass
+                            candidate = re.match("COSM(\d+)", colocated_variant['id']).group(1)
+                            print candidate
+                            
+                            current = re.match("COSM(\d+)", best_colocated_variant['id']).group(1)
+                            print current
+                            if int(current) < int(candidate):
+                                pass
+                            else:
+                                best_colocated_variant = colocated_variant
                         # if we have an non-rsID as best variant, and this is a COSMIC variant, substitute if there is no MAF
                         elif re.match("COSM", colocated_variant['id'])  and not re.match("rs", best_colocated_variant['id']):
                             if 'minor_allele_freq' in best_colocated_variant.keys():
@@ -434,7 +465,8 @@ def main():
                                 pass
                             else:
                                 best_colocated_variant = colocated_variant
-
+    
+            
             return best_colocated_variant
     
         def determine_best_transcript(variant_entry):
@@ -749,7 +781,7 @@ def main():
                     for colocated_variant in variant_entry['colocated_variants']:
                         colocated_variant = defaultdict(lambda: "", colocated_variant)
                         
-                        chr = "chr%s" % variant_entry['seq_region_name']
+                        chr = variant_entry['seq_region_name']
                         #pos = variant_entry['vcf_pos']
                         pos = variant_entry['start']
                         variant = chr + "_" + str(pos)
@@ -780,12 +812,14 @@ def main():
                             colocated_minor_allele = colocated_variant['minor_allele']
             
                         if 'clin_sig' in colocated_variant.keys():
-                            colocated_clinsig = ",".join(colocated_variant['clin_sig'])
+                            #colocated_clinsig = ",".join(colocated_variant['clin_sig'])
+                            colocated_clinsig = colocated_variant['clin_sig']
                         else:
                             colocated_clinsig = colocated_variant['clin_sig']
             
                         if 'pubmed' in colocated_variant.keys():
-                            colocated_pubmed = ",".join((str(i) for i in colocated_variant['pubmed']))
+                            #colocated_pubmed = ",".join((str(i) for i in colocated_variant['pubmed']))
+                            colocated_pubmed = colocated_variant['pubmed']
                         else:
                             colocated_pubmed = colocated_variant['pubmed']
     
@@ -832,7 +866,7 @@ def main():
                         #pp.pprint(consequence)
                         consequence = defaultdict(lambda: "", consequence)
                         
-                        chr = "chr%s" % variant_entry['seq_region_name']
+                        chr = variant_entry['seq_region_name']
                         #pos = variant_entry['vcf_pos']
                         pos = variant_entry['start']
                         variant_id = chr + "_" + str(pos)
@@ -860,8 +894,8 @@ def main():
                             polyphen = "/".join( [ consequence['polyphen_prediction'], str(consequence['polyphen_score']) ] )
                         else:
                             polyphen = ""
-                        swissprot = consequence['swissprot']
-                        trembl = consequence['trembl']
+                        swissprot = ",".join(consequence['swissprot'])
+                        trembl = ",".join(consequence['trembl'])
                         
                         
                         values_to_print = [variant_id,
@@ -927,7 +961,7 @@ def main():
                         
                         assembly_name = variant_entry['assembly_name']
                         comment = ""
-                        chr = "chr%s" % variant_entry['seq_region_name']
+                        chr = variant_entry['seq_region_name']
                         gene = best_transcript['gene_symbol']
                         #pos = variant_entry['vcf_pos']
                         pos = variant_entry['start']
@@ -981,12 +1015,14 @@ def main():
                             colocated_minor_allele = best_colocated_variant['minor_allele']
             
                         if 'clin_sig' in best_colocated_variant.keys():
-                            colocated_clinsig = ",".join(best_colocated_variant['clin_sig'])
+                            #colocated_clinsig = ",".join(best_colocated_variant['clin_sig'])
+                            colocated_clinsig = best_colocated_variant['clin_sig']
                         else:
                             colocated_clinsig = best_colocated_variant['clin_sig']
             
                         if 'pubmed' in best_colocated_variant.keys():
-                            colocated_pubmed = ",".join((str(i) for i in best_colocated_variant['pubmed']))
+                            #colocated_pubmed = ",".join((str(i) for i in best_colocated_variant['pubmed']))
+                            colocated_pubmed = best_colocated_variant['pubmed']
                         else:
                             colocated_pubmed = best_colocated_variant['pubmed']
                         # convert floats to decimal with 3 decimal points
@@ -1105,7 +1141,7 @@ def main():
                 assembly_name = variant_entry['assembly_name']
                 
                 comment = variant_entry['comment']
-                chr = "chr%s" % variant_entry['seq_region_name']
+                chr = variant_entry['seq_region_name']
                 #pos = variant_entry['vcf_pos']
                 pos = variant_entry['start']
                 gene = best_transcript['gene_symbol']
@@ -1147,8 +1183,8 @@ def main():
                     polyphen = "/".join( [ best_transcript['polyphen_prediction'], str(best_transcript['polyphen_score']) ] )
                 else:
                     polyphen = ""
-                swissprot = best_transcript['swissprot']
-                trembl = best_transcript['trembl']
+                swissprot = ",".join(best_transcript['swissprot'])
+                trembl = ",".join(best_transcript['trembl'])
                 colocated_link = chr + "_" + str(pos)
                 colocated_id = best_colocated_variant['id']
                 if 'somatic' in best_colocated_variant.keys():
@@ -1177,12 +1213,14 @@ def main():
                     colocated_minor_allele = best_colocated_variant['minor_allele']
     
                 if 'clin_sig' in best_colocated_variant.keys():
-                    colocated_clinsig = ",".join(best_colocated_variant['clin_sig'])
+                    #colocated_clinsig = ",".join(best_colocated_variant['clin_sig'])
+                    colocated_clinsig = best_colocated_variant['clin_sig']
                 else:
                     colocated_clinsig = best_colocated_variant['clin_sig']
     
                 if 'pubmed' in best_colocated_variant.keys():
-                    colocated_pubmed = ",".join((str(i) for i in best_colocated_variant['pubmed']))
+                    #colocated_pubmed = ",".join((str(i) for i in best_colocated_variant['pubmed']))
+                    colocated_pubmed = best_colocated_variant['pubmed']
                 else:
                     colocated_pubmed = best_colocated_variant['pubmed']
                 
@@ -1497,7 +1535,8 @@ def main():
                                    fusion["3'/5' Imbalance"],
                                    fusion['COSMIC/NCBI'],
                                    fusion['Variant ID'],
-                                   fusion['Read Counts per million']
+                                   fusion['Read Counts per million'],
+                                   fusion['Wild Type Assay']
                                    ]
     
                 print_dict = OrderedDict(zip(header_dict['fusion'], values_to_print))
@@ -1525,23 +1564,40 @@ def main():
                 for line in f.readlines():
                     if not re.search("^#", line):
                         line_obj = FusionVCFEntry(line)
-                        if line_obj.svtype == "Fusion":
-                            if line_obj.fusion.variant_id in master_fusion_dict.keys():
-                                master_fusion_dict[line_obj.fusion.variant_id]['Locus'] = master_fusion_dict[line_obj.fusion.variant_id]['Locus'] + " - " + line_obj.fusion.locus
+                        if line_obj.svtype == "Fusion" or line_obj.svtype == "RNAExonVariant":
+                            if re.search("WILD_TYPE_ASSAY=1", line):
+                                master_fusion_dict[line_obj.rna_exon_variant_wild_type_assay.variant_id] = {'Comment' : '',
+                                                                                            'Locus' : line_obj.rna_exon_variant_wild_type_assay.locus,
+                                                                                            'Type' : line_obj.svtype,
+                                                                                            'Genes(Exons)' : line_obj.rna_exon_variant_wild_type_assay.genes_and_exons,
+                                                                                            'Read Counts' : line_obj.rna_exon_variant_wild_type_assay.read_count,
+                                                                                            'Oncomine Variant Class' : line_obj.rna_exon_variant_wild_type_assay.oncomine_variant_class,
+                                                                                            'Oncomine Gene Class' : line_obj.rna_exon_variant_wild_type_assay.oncomine_gene_class,
+                                                                                            'Detection' : line_obj.rna_exon_variant_wild_type_assay.detection,
+                                                                                            "3'/5' Imbalance" : "",
+                                                                                            'COSMIC/NCBI' : line_obj.rna_exon_variant_wild_type_assay.annotation,
+                                                                                            'Variant ID' : line_obj.rna_exon_variant_wild_type_assay.variant_id,
+                                                                                            'Read Counts per million' : line_obj.rna_exon_variant_wild_type_assay.rpm,
+                                                                                            'Wild Type Assay' : "1"
+                                                                                            }
                             else:
-                                master_fusion_dict[line_obj.fusion.variant_id] = {'Comment' : "",
-                                                                                  'Locus' : line_obj.fusion.locus,
-                                                                                  'Type' : line_obj.svtype,
-                                                                                  'Genes(Exons)' : line_obj.fusion.genes_and_exons,
-                                                                                  'Read Counts' : line_obj.fusion.read_count,
-                                                                                  'Oncomine Variant Class' : line_obj.fusion.oncomine_variant_class,
-                                                                                  'Oncomine Gene Class' : line_obj.fusion.oncomine_gene_class,
-                                                                                  'Detection' : line_obj.fusion.detection,
-                                                                                  "3'/5' Imbalance" : "",
-                                                                                  'COSMIC/NCBI' : line_obj.fusion.annotation,
-                                                                                  'Variant ID' : line_obj.fusion.variant_id,
-                                                                                  'Read Counts per million' : line_obj.fusion.rpm
-                                                                                  }
+                                if line_obj.fusion.variant_id in master_fusion_dict.keys():
+                                    master_fusion_dict[line_obj.fusion.variant_id]['Locus'] = master_fusion_dict[line_obj.fusion.variant_id]['Locus'] + " - " + line_obj.fusion.locus
+                                else:
+                                    master_fusion_dict[line_obj.fusion.variant_id] = {'Comment' : "",
+                                                                                      'Locus' : line_obj.fusion.locus,
+                                                                                      'Type' : line_obj.svtype,
+                                                                                      'Genes(Exons)' : line_obj.fusion.genes_and_exons,
+                                                                                      'Read Counts' : line_obj.fusion.read_count,
+                                                                                      'Oncomine Variant Class' : line_obj.fusion.oncomine_variant_class,
+                                                                                      'Oncomine Gene Class' : line_obj.fusion.oncomine_gene_class,
+                                                                                      'Detection' : line_obj.fusion.detection,
+                                                                                      "3'/5' Imbalance" : "",
+                                                                                      'COSMIC/NCBI' : line_obj.fusion.annotation,
+                                                                                      'Variant ID' : line_obj.fusion.variant_id,
+                                                                                      'Read Counts per million' : line_obj.fusion.rpm,
+                                                                                      'Wild Type Assay' : ""
+                                                                                      }
                         elif line_obj.svtype == "ExprControl":
                             master_fusion_dict[line_obj.expr_control.variant_id] = {'Comment' : '',
                                                                                     'Locus' : line_obj.expr_control.locus,
@@ -1554,7 +1610,8 @@ def main():
                                                                                     "3'/5' Imbalance" : line_obj.expr_control.imbalance_assay,
                                                                                     'COSMIC/NCBI' : line_obj.expr_control.annotation,
                                                                                     'Variant ID' : line_obj.expr_control.variant_id,
-                                                                                    'Read Counts per million' : line_obj.expr_control.rpm
+                                                                                    'Read Counts per million' : line_obj.expr_control.rpm,
+                                                                                    'Wild Type Assay' : ""
                                                                                     }
                         elif line_obj.svtype == "GeneExpression":
                             master_fusion_dict[line_obj.gene_expression.variant_id] = {'Comment' : '',
@@ -1568,7 +1625,8 @@ def main():
                                                                                     "3'/5' Imbalance" : line_obj.gene_expression.imbalance_assay,
                                                                                     'COSMIC/NCBI' : line_obj.gene_expression.annotation,
                                                                                     'Variant ID' : line_obj.gene_expression.variant_id,
-                                                                                    'Read Counts per million' : line_obj.gene_expression.rpm
+                                                                                    'Read Counts per million' : line_obj.gene_expression.rpm,
+                                                                                    'Wild Type Assay' : ""
                                                                                     }
                         
                         elif line_obj.svtype == "5p3pAssays":
@@ -1583,7 +1641,8 @@ def main():
                                                                                     "3'/5' Imbalance" : line_obj.imbalance_assay.imbalance_assay,
                                                                                     'COSMIC/NCBI' : line_obj.imbalance_assay.annotation,
                                                                                     'Variant ID' : line_obj.imbalance_assay.variant_id,
-                                                                                    'Read Counts per million' : line_obj.imbalance_assay.rpm
+                                                                                    'Read Counts per million' : line_obj.imbalance_assay.rpm,
+                                                                                    'Wild Type Assay' : ""
                                                                                     }
                         svtype = re.search("SVTYPE=(\w+?);", line).group(1)
                         svtypes.append(svtype)
@@ -1639,7 +1698,8 @@ def main():
                                    "3'/5' Imbalance",
                                    'COSMIC/NCBI',
                                    'Variant ID',
-                                   'Read Counts per million']
+                                   'Read Counts per million',
+                                   'Wild Type Assay']
             
             fusion_sheet = wb.get_sheet_by_name('fusion')
             row_counter = 1

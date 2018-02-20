@@ -271,18 +271,42 @@ def apply_summary_filters(wb,sheetname,indices,transcript_id_row_dict,colocated_
             gene = summary_sheet.cell(row=row_counter,column=indices.gene)
             coordinate = comment.coordinate
             
-            if status.value == "Somatic":
-                if (main_consequence.value == "3_prime_UTR_variant") or (main_consequence.value == "5_prime_UTR_variant") \
-                or (main_consequence.value == "intron_variant") or (main_consequence.value == "non_coding_transcript_exon_variant") or (main_consequence.value == "synonymous_variant"):
-                    summary_sheet[coordinate]="non-deleterious change(not reviewed)"
-                elif tumor_VAF.value is None:
-                    pass
-                elif tumor_VAF.value == "UNK":
-                    pass
-                elif float(tumor_VAF.value) <= float(opts.minimum_vaf):
-                    summary_sheet[coordinate]="no significant VAF in tumor"
-                elif opts.treat_somatic_as_germline is True:
-                    if re.search("^rs",str(colocated_variant.value)):
+            if opts.enable_monthly_qc is False:
+                if status.value == "Somatic":
+                    if (main_consequence.value == "3_prime_UTR_variant") or (main_consequence.value == "5_prime_UTR_variant") \
+                    or (main_consequence.value == "intron_variant") or (main_consequence.value == "non_coding_transcript_exon_variant") or (main_consequence.value == "synonymous_variant"):
+                        summary_sheet[coordinate]="non-deleterious change(not reviewed)"
+                    elif tumor_VAF.value is None:
+                        pass
+                    elif tumor_VAF.value == "UNK":
+                        pass
+                    elif float(tumor_VAF.value) <= float(opts.minimum_vaf):
+                        summary_sheet[coordinate]="no significant VAF in tumor"
+                    elif opts.treat_somatic_as_germline is True:
+                        if re.search("^rs",str(colocated_variant.value)):
+                            try:
+                                if colocated_minor_allele_freq.value is None:
+                                    pass
+                                elif float(colocated_minor_allele_freq.value) >= 0.001:
+                                    if re.search("pathogenic",str(colocated_clin_sig.value)):
+                                        pass
+                                    else:
+                                        summary_sheet[coordinate]="known SNP"
+                                else:
+                                    pass
+                            except Exception,e:
+                                print str(e)
+                    else:
+                        pass
+                elif status.value == "Germline":
+                    if (main_consequence.value == "3_prime_UTR_variant") or (main_consequence.value == "5_prime_UTR_variant") \
+                    or (main_consequence.value == "intron_variant") or (main_consequence.value == "non_coding_transcript_exon_variant") or (main_consequence.value == "synonymous_variant"):
+                        summary_sheet[coordinate]="non-deleterious change(not reviewed)"
+                    elif tumor_VAF.value is None:
+                        pass
+                    elif float(tumor_VAF.value) <= 0.20:
+                        summary_sheet[coordinate]="no significant VAF in tumor"               
+                    elif re.search("^rs",str(colocated_variant.value)):
                         try:
                             if colocated_minor_allele_freq.value is None:
                                 pass
@@ -295,43 +319,20 @@ def apply_summary_filters(wb,sheetname,indices,transcript_id_row_dict,colocated_
                                 pass
                         except Exception,e:
                             print str(e)
-                else:
-                    pass
-            elif status.value == "Germline":
-                if (main_consequence.value == "3_prime_UTR_variant") or (main_consequence.value == "5_prime_UTR_variant") \
-                or (main_consequence.value == "intron_variant") or (main_consequence.value == "non_coding_transcript_exon_variant") or (main_consequence.value == "synonymous_variant"):
-                    summary_sheet[coordinate]="non-deleterious change(not reviewed)"
-                elif tumor_VAF.value is None:
-                    pass
-                elif float(tumor_VAF.value) <= 0.20:
-                    summary_sheet[coordinate]="no significant VAF in tumor"               
-                elif re.search("^rs",str(colocated_variant.value)):
-                    try:
-                        if colocated_minor_allele_freq.value is None:
-                            pass
-                        elif float(colocated_minor_allele_freq.value) >= 0.001:
-                            if re.search("pathogenic",str(colocated_clin_sig.value)):
-                                pass
-                            else:
-                                summary_sheet[coordinate]="known SNP"
-                        else:
-                            pass
-                    except Exception,e:
-                        print str(e)
-                else:
-                    pass   
-            elif status.value == "LOH":
-                if (main_consequence.value == "3_prime_UTR_variant") or (main_consequence.value == "5_prime_UTR_variant") \
-                or (main_consequence.value == "intron_variant") or (main_consequence.value == "non_coding_transcript_exon_variant") or (main_consequence.value == "synonymous_variant"):
-                    summary_sheet[coordinate]="non-deleterious change(not reviewed)"
-                elif tumor_VAF.value is None:
-                    pass
-                elif float(tumor_VAF.value) <= float(opts.minimum_vaf):
-                    summary_sheet[coordinate]="no significant VAF in tumor"
-                elif float(tumor_VAF.value) <= 0.50 and float(normal_VAF.value) <= 0.50:
-                    summary_sheet[coordinate]="also in normal"
-                else:
-                    pass
+                    else:
+                        pass   
+                elif status.value == "LOH":
+                    if (main_consequence.value == "3_prime_UTR_variant") or (main_consequence.value == "5_prime_UTR_variant") \
+                    or (main_consequence.value == "intron_variant") or (main_consequence.value == "non_coding_transcript_exon_variant") or (main_consequence.value == "synonymous_variant"):
+                        summary_sheet[coordinate]="non-deleterious change(not reviewed)"
+                    elif tumor_VAF.value is None:
+                        pass
+                    elif float(tumor_VAF.value) <= float(opts.minimum_vaf):
+                        summary_sheet[coordinate]="no significant VAF in tumor"
+                    elif float(tumor_VAF.value) <= 0.50 and float(normal_VAF.value) <= 0.50:
+                        summary_sheet[coordinate]="also in normal"
+                    else:
+                        pass
 
             # Add IGV hyperlink
             
@@ -447,6 +448,7 @@ def apply_fusion_filter(wb,sheetname,indices):
     prime_assay_rows = []
     control_rows = []
     gene_expression_rows = []
+    rna_exon_variant_rows = []
     
     for row in fusion_sheet.rows:
         row_counter+=1
@@ -464,6 +466,8 @@ def apply_fusion_filter(wb,sheetname,indices):
             elif fusion_type.value == "ExprControl":
                 control_rows.append(row)
             elif fusion_type.value == "GeneExpression":
+                gene_expression_rows.append(row)
+            elif fusion_type.value == "RNAExonVariant":
                 gene_expression_rows.append(row)
             else:
                 print "Unsupported fusion type"
@@ -538,6 +542,18 @@ def apply_fusion_filter(wb,sheetname,indices):
                 for cell in row:
                     cell.font = Font(name="Liberation Sans",size=10,color='909090')
                 comment.value = "5p3pAssay"
+            elif fusion_type.value == "RNAExonVariant":
+                if fusion_sheet.cell(row=row_counter,column=indices.variant_id).value.endswith(".WT"):
+                    for cell in row:
+                        cell.font = Font(name="Liberation Sans",size=10,color='909090')
+                    comment.value = "WT Assay"
+                else:
+                    if int(read_counts.value) >= 1000:
+                        comment.value = "OK: Fusion"
+                    else:
+                        for cell in row:
+                            cell.font = Font(name="Liberation Sans",size=10,color='909090')
+                        comment.value = "Absent"
  
 
 def colnum_string(n):
@@ -574,7 +590,10 @@ def perform_monthly_QC_check(wb, variant_summary_dict):
     
         
                 details_dict = parse_details(self.details)
+                details_dict['START_POS'] = self.start
+                details_dict['END_POS'] = self.end
                 
+                self.start = details_dict['MUTATION_CDS']
                 self.mutation_cds = details_dict['MUTATION_CDS']
                 self.mutation_aa = details_dict['MUTATION_AA']
                 self.ref_allele = details_dict['REF']
@@ -751,7 +770,7 @@ def perform_monthly_QC_check(wb, variant_summary_dict):
             #print output_fields
             return output_fields
             
-        for k1 in qc_dict.keys():
+        for k1 in sorted(qc_dict.keys()):
             if k1 in variant_summary_dict.keys():
                 # Use k1 for key in both qc_dict and variant_summary_dict
                 comment, pass_or_fail = expected_observed_VAF_test(k1, k1)
@@ -766,7 +785,7 @@ def perform_monthly_QC_check(wb, variant_summary_dict):
                 
                 for k2 in variant_summary_dict.keys():
                     if qc_dict[k1]['GENE'] == variant_summary_dict[k2]['gene'] and match_bool is False:
-                        if re.search(re.escape(str(qc_dict[k1]['MUTATION_CDS'])), str(variant_summary_dict[k2]['hgvsc']), re.IGNORECASE):
+                        if re.search(re.escape(str(qc_dict[k1]['MUTATION_CDS'])), str(variant_summary_dict[k2]['hgvsc']), re.IGNORECASE) and (opts.panel != 'OCPv3' or opts.panel != 'OCAv3'):
                             comment, pass_or_fail = expected_observed_VAF_test(k1, k2)
                             summary_sheet[variant_summary_dict[k2]['comment_coordinate']] = comment
                             selected_variant_dict_fields = select_final_qc_fields_from_variant_summary_dict(k2)
@@ -774,6 +793,13 @@ def perform_monthly_QC_check(wb, variant_summary_dict):
                             qc_sheet_output_fields = process_final_qc_fields(selected_qc_dict_fields, selected_variant_dict_fields)
                             match_bool = True                      
                         elif re.search(re.escape(str(qc_dict[k1]['MUTATION_AA'])), str(variant_summary_dict[k2]['hgvsp']), re.IGNORECASE):
+                            comment, pass_or_fail = expected_observed_VAF_test(k1, k2)
+                            summary_sheet[variant_summary_dict[k2]['comment_coordinate']] = comment
+                            selected_variant_dict_fields = select_final_qc_fields_from_variant_summary_dict(k2)
+                            selected_qc_dict_fields = select_final_qc_fields_from_qc_dict(k1)
+                            qc_sheet_output_fields = process_final_qc_fields(selected_qc_dict_fields, selected_variant_dict_fields)
+                            match_bool = True
+                        elif re.search(re.escape(str(qc_dict[k1]['MUTATION_ID'])), str(variant_summary_dict[k2]['co-located id']), re.IGNORECASE):
                             comment, pass_or_fail = expected_observed_VAF_test(k1, k2)
                             summary_sheet[variant_summary_dict[k2]['comment_coordinate']] = comment
                             selected_variant_dict_fields = select_final_qc_fields_from_variant_summary_dict(k2)

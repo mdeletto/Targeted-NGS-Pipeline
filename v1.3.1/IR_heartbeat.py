@@ -25,7 +25,7 @@ global opts
 
 desc="""IR_heartbeat.py acts as a gateway for initiating the bioinformatics analyses (variant calling, annotation, and other QC) for IonTorrent data.  The script contacts the IR server, pulls in necessary info, initiates the downstream bioinformatics analyses, and logs the activity in Elasticsearch."""
 usage="./IR_heartbeat -d <analysis_date>"
-version="1.3.0"
+version="1.0"
 parser = optparse.OptionParser(description=desc,usage=usage,version=version)
  
 group = optparse.OptionGroup(parser, "General options")
@@ -34,7 +34,7 @@ group.add_option("--ionreporter_url","-i", help="IP address or hostname of IR se
 group.add_option("--analysis_date","-d", help="Pull IR analyses from this date.  YYYY-mm-dd format required (e.g. %default).  Default date for analysis is today!",dest='date',action='store',default=datetime.datetime.strftime(datetime.date.today(), "%Y-%m-%d"))
 group.add_option("--days", help="Number of days to look back at for IR analyses.  Default is to use all IR analyses.  However, by reducing the number of days, runtime will be faster.",dest='days',action='store',default=None)
 group.add_option("--download_bams_only","", help="Pull tumor and normal bams for a given analysis and quit",dest='bams_only',action='store_true',default=False)
-group.add_option("--pipeline_version","-p", help="Pipeline version to use.  Default is to use the latest pipeline (%default)",dest='pipeline_version',action='store',default="1.3.0")#datetime.date.today())
+group.add_option("--pipeline_version","-p", help="Pipeline version to use.  Default is to use the latest pipeline (%default)",dest='pipeline_version',action='store',default="1.2.1")#datetime.date.today())
 group.add_option("--additional-pipeline-arguments", help="Arguments to pass to the pipeline for additional control over the pipeline.",dest='pipeline_arguments',action='store',default=None)#datetime.date.today())
 group.add_option("--force","-f", help="Force unsupported panels through the pipeline anyway.  NOT RECOMMENDED.",dest='force',action='store_true',default=False)
 group.add_option("--skip-es-submit", help="Skip submitting the case ID to ElasticSearch.  Default=[%default]",dest='skip_es_submit',action='store_true',default=False)
@@ -144,10 +144,10 @@ def IR_analysis_summary_view():
     else:
         today = datetime.datetime.strptime(opts.date, "%Y-%m-%d")
         today_formatted = today.strftime("%Y-%m-%d")
-        datediff = today - datetime.timedelta(days=(int(opts.days)+1))
-        datediff_string = datediff.strftime("%Y-%m-%d")
+        two_weeks_ago = today - datetime.timedelta(days=14)
+        two_weeks_ago_formatted = two_weeks_ago.strftime("%Y-%m-%d")
         
-        proc = subprocess.Popen(["""curl -k -H "Authorization:%s" "https://%s/webservices_42/rest/api/analysis?format=json&view=summary&start_date=%s&end_date=%s" 2> /dev/null""" % (IR_API_KEY,"10.80.157.179", datediff_string, today_formatted)],shell=True,stdout=subprocess.PIPE)
+        proc = subprocess.Popen(["""curl -k -H "Authorization:%s" "https://%s/webservices_42/rest/api/analysis?format=json&view=summary&start_date=%s&end_date=%s" 2> /dev/null""" % (IR_API_KEY,"10.80.157.179", two_weeks_ago_formatted, today_formatted)],shell=True,stdout=subprocess.PIPE)
     output, err = proc.communicate()
     all_IR_analyses = json.loads(output)
     
@@ -172,47 +172,24 @@ def select_analyses(all_IR_analyses):
     
     
     names = []
-    today_date_string = format_date_to_string(opts.date)
+    date = format_date_to_string(opts.date)
     # Only match analyses that have SOMATIC|FUSION|GERMLINE in name
     pattern = re.compile('SOMATIC|Somatic|Fusion|FUSION|Germline|GERMLINE')
     
     for analysis in all_IR_analyses:
         if pattern.search(analysis['name'], re.IGNORECASE):
-            
-            # format date object into string
-            today = datetime.datetime.strptime(opts.date, "%Y-%m-%d")
-            today_formatted = today.strftime("%Y-%m-%d")
-
-            if opts.days is not None: 
-                # User has entered opts.days, so we look back at all analyses in this time range
-                datediff = today - datetime.timedelta(days=int(opts.days))
-                
-                datediff_string = datediff.strftime("%Y-%m-%d")
-                if datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y") <= today and datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y") >= datediff: #and analysis['started_by'] == "Mike D'Eletto":
-                    if not re.search('-',analysis['name']) and not re.search('_',analysis['name']):
-                        print "ERROR: Analysis string is not in correct format.  Please consult README for using this workflow.  Trying to proceed..."
-                        names.append(analysis['name'].strip())
-                    elif not re.search('_',analysis['name']):
-                        name_split = analysis['name'].split("-")
-                        copath_id = str(name_split[0]+"-"+name_split[1])
-                        names.append(copath_id.strip())
-                    elif re.search('_',analysis['name']):
-                        name_split = analysis['name'].split("_")
-                        copath_id = name_split[0]
-                        names.append(copath_id.strip())
-            else:
-                if datetime.datetime.strptime(analysis['start_date'], "%B %d, %Y") == today: #and analysis['started_by'] == "Mike D'Eletto":
-                    if not re.search('-',analysis['name']) and not re.search('_',analysis['name']):
-                        print "ERROR: Analysis string is not in correct format.  Please consult README for using this workflow.  Trying to proceed..."
-                        names.append(analysis['name'].strip())
-                    elif not re.search('_',analysis['name']):
-                        name_split = analysis['name'].split("-")
-                        copath_id = str(name_split[0]+"-"+name_split[1])
-                        names.append(copath_id.strip())
-                    elif re.search('_',analysis['name']):
-                        name_split = analysis['name'].split("_")
-                        copath_id = name_split[0]
-                        names.append(copath_id.strip())
+            if analysis['start_date'] == date: #and analysis['started_by'] == "Mike D'Eletto":
+                if not re.search('-',analysis['name']) and not re.search('_',analysis['name']):
+                    print "ERROR: Analysis string is not in correct format.  Please consult README for using this workflow.  Trying to proceed..."
+                    names.append(analysis['name'].strip())
+                elif not re.search('_',analysis['name']):
+                    name_split = analysis['name'].split("-")
+                    copath_id = str(name_split[0]+"-"+name_split[1])
+                    names.append(copath_id.strip())
+                elif re.search('_',analysis['name']):
+                    name_split = analysis['name'].split("_")
+                    copath_id = name_split[0]
+                    names.append(copath_id.strip())
     
     
     names = list(set(names))
@@ -284,7 +261,7 @@ def download_bams_from_IR(IR_download_link,IR_download_dir,workflow_dict_key):
     for sample_type,nested_list in bams_to_download.iteritems():
         if not os.path.isfile("%s/%s-%s-merged.bam" % (os.getcwd(),sample_name,sample_type)) and not os.path.isfile("%s/%s-%s.bam" % (os.getcwd(),sample_name,sample_type)):
             sample_definition_file, bam_link = (i for i in nested_list)
-            proc = subprocess.check_output("""curl -s -O -k -H "Content-Type:application/x-www-form-urlencoded" -H "Authorization:%s" "%s" 2> /dev/null && unzip -o %s """ % (IR_API_KEY,bam_link,sample_definition_file),shell=True)
+            proc = subprocess.check_output("""curl -s -O -k -H "Authorization:%s" "%s" 2> /dev/null && unzip -o %s """ % (IR_API_KEY,bam_link,sample_definition_file),shell=True)
             direct_bam_filepaths = subprocess.check_output("""awk '{print $NF}' %s/%s""" % (os.getcwd(),sample_definition_file),shell=True)
             num_lines = sum(1 for line in open('%s/%s' %(os.getcwd(),sample_definition_file)))
             bam_barcode_paths_and_ids = {}
@@ -346,9 +323,8 @@ def initiate_IR_download(workflow_dict,sample_name):
                                              workflow_dict[sample_name]['somatic_analysis']['somatic_analysis_id'],
                                              opts.url,
                                              IR_API_KEY)
-
-    IR_download_URL = re.search("(http.+?download\?filepath=)(.+)",variant_link, re.IGNORECASE)
-
+    
+    IR_download_URL = re.search("(http.+?download\?filepath=)(.+)",variant_link)
     if IR_download_URL:
         IR_download_link = IR_download_URL.group(1)
         IR_download_dir = IR_download_URL.group(2)
@@ -709,9 +685,6 @@ def run_pipeline():
             
         if re.search("TFNA", str(workflow_dict[key]['panel_name'])):
             command += " --disable_filtering --ionreporter_only"
-            
-        if re.search("WhEx", str(workflow_dict[key]['panel_name'])):
-            command += " --ionreporter_only"
      
         if opts.pipeline_arguments is not None:
             command += str(opts.pipeline_arguments)
@@ -750,7 +723,7 @@ def IR_analysis_control():
                              
                              'Comprehensive Cancer Panel' : {
                                                              'somatic_analysis' : 'required',
-                                                             'germline_analysis' : 'optional',
+                                                             'germline_analysis' : 'required',
                                                              'fusion_analysis' : 'N/A'               
                                                              },
                              
@@ -759,18 +732,6 @@ def IR_analysis_control():
                                                         'germline_analysis' : 'optional',
                                                         'fusion_analysis' : 'N/A'  
                                                          },
-                             
-                             'AMGEN' : {
-                                        'somatic_analysis' : 'required',
-                                        'germline_analysis' : 'optional',
-                                        'fusion_analysis' : 'N/A'  
-                                         },
-                             
-                             "Exome" : {
-                                        'somatic_analysis' : 'required',
-                                        'germline_analysis' : 'optional',
-                                        'fusion_analysis' : 'N/A'  
-                                         },
                              
                              'TFNA' : {
                                         'somatic_analysis' : 'required',
@@ -929,7 +890,6 @@ IR_API_KEY = set_IR_API_key_based_on_url(opts.url)
 # Connect to IR server and get basic summary view
 all_IR_analyses = IR_analysis_summary_view()
 
-
 # Split IR analysis names and find unique identifiers
 names = select_analyses(all_IR_analyses)
 
@@ -938,7 +898,6 @@ workflow_dict = {}
 
 # Initialize PrettyPrinter for verbose printing of dictionaries
 pp = pprint.PrettyPrinter(indent=4)
-pp.pprint(all_IR_analyses)
 
 # Cycle through unique identifiers and map to different analyses in the server
 for name in names:
@@ -955,7 +914,7 @@ for name in names:
         workflow_nested_dict, somatic_dict, germline_dict, fusion_dict, qc_dict = (defaultdict(lambda: None) for i in range(5))
         workflow_dict[name] = workflow_nested_dict
         for analysis in all_IR_analyses:
-            if (re.search(name,analysis['name']) or name==analysis['name'] or re.match(name,analysis['name'])): #and analysis['start_date']==format_date_to_string(opts.date):
+            if (re.search(name,analysis['name']) or name==analysis['name'] or re.match(name,analysis['name'])) and analysis['start_date']==format_date_to_string(opts.date):
                 # Pass analyses with designated flags
                 pattern = re.compile('BETA|SKIP|FALSE') # Remove 'TEST|RUO'
                 if pattern.search(analysis['name'], re.IGNORECASE):
@@ -978,8 +937,7 @@ for name in names:
                         
                         # Get base filepath on IR server
                         somatic_base_filepath = determine_IR_basename_filepath(analysis['name'], analysis['id'], opts.url, IR_API_KEY)
-                        print somatic_base_filepath
-                        trash, dirpath = somatic_base_filepath.split("=")
+                        trash, dirpath = somatic_base_filepath.split("filepath=")
                         dirpath = "/".join(dirpath.split("/")[:-1])
                         try:
                             remote_command_output = connect_to_IR_server_and_run_command("grep '##mapd' %s/outputs/AnnotatorActor-00/annotated_variants.vcf" % dirpath)
@@ -1074,7 +1032,7 @@ for name in names:
                         
                         # Get base filepath on IR server
                         somatic_base_filepath = determine_IR_basename_filepath(analysis['name'], analysis['id'], opts.url, IR_API_KEY)
-                        trash, dirpath = somatic_base_filepath.split("=")
+                        trash, dirpath = somatic_base_filepath.split("filepath=")
                         dirpath = "/".join(dirpath.split("/")[:-1])
                         remote_command_output = connect_to_IR_server_and_grab_file_contents("%s/outputs/RNACountsActor-00/fusions.vcf" % dirpath)
                         # Extract FUSION QC info

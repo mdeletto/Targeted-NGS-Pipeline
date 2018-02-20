@@ -2,7 +2,6 @@
 
 import os
 import re
-import sys
 import pprint
 import json
 import openpyxl
@@ -15,7 +14,7 @@ from natsort import natsorted
 import argparse
 
 def main():
-    vers="1.0"
+    vers="1.3.2"
     desc="""This tool is designed to parse pipeline output files and convert into a more readable format (e.g. a spreadsheet)"""
     parser = argparse.ArgumentParser(description=desc, version=vers)
     
@@ -43,13 +42,13 @@ def main():
             self.pos = split_tsv_line[1]
             self.type = split_tsv_line[2]
             self.length = split_tsv_line[4]
-            self.iscn = split_tsv_line[12]
+            self.iscn = split_tsv_line[11]
             match = re.search("x(\d*)", self.iscn)
             self.ploidy = match.group(1)
             
-            self.confidence = split_tsv_line[13]
-            self.precision = split_tsv_line[14]
-            self.genes = split_tsv_line[21]
+            self.confidence = split_tsv_line[12]
+            self.precision = split_tsv_line[13]
+            self.genes = split_tsv_line[17]
     
     class CNV_VCF_Fields:
         def __init__(self, split_vcf_line, vcf_line):
@@ -434,7 +433,8 @@ def main():
                                 pass
                             else:
                                 best_colocated_variant = colocated_variant
-
+    
+                
             return best_colocated_variant
     
         def determine_best_transcript(variant_entry):
@@ -1416,7 +1416,7 @@ def main():
             with open(cnv_tsv, "r") as f:
                 line_counter = 1
                 for line in f.readlines():
-                    if not re.match("#", line):
+                    if not line_counter == 1:
                         split_line = line.strip().split("\t")
                         if split_line[2] == "CNV":
                             line_obj = CNV_TSV_Fields(split_line)

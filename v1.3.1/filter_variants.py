@@ -18,7 +18,6 @@ parser = optparse.OptionParser(description=desc, version=vers)
 parser.add_option('-i', help='DownstreamReporting spreadsheet input (.xlsx only)', dest='input', action='store')
 parser.add_option('-p', help='Panel type <OCP,CCP,BRCA>', dest='panel', action='store', default=None) # This option is not currently used in the program, but will in the future to apply panel-specific filters.
 parser.add_option('-o', help='DownstreamReporting filtered output for reupload', dest='output', action='store')
-parser.add_option('--treat_somatic_as_germline', help='For cases that use population normal, filter out somatic calls that are co-located with snps', dest='treat_somatic_as_germline', action='store_true', default=False)
 parser.add_option('--minimum-vaf', help='Minimum variant allele frequency for detected variants', dest='minimum_vaf', action='store', default=0.10)
 
 monthly_qc_args = optparse.OptionGroup(parser, "MONTHLY QC",
@@ -281,20 +280,6 @@ def apply_summary_filters(wb,sheetname,indices,transcript_id_row_dict,colocated_
                     pass
                 elif float(tumor_VAF.value) <= float(opts.minimum_vaf):
                     summary_sheet[coordinate]="no significant VAF in tumor"
-                elif opts.treat_somatic_as_germline is True:
-                    if re.search("^rs",str(colocated_variant.value)):
-                        try:
-                            if colocated_minor_allele_freq.value is None:
-                                pass
-                            elif float(colocated_minor_allele_freq.value) >= 0.001:
-                                if re.search("pathogenic",str(colocated_clin_sig.value)):
-                                    pass
-                                else:
-                                    summary_sheet[coordinate]="known SNP"
-                            else:
-                                pass
-                        except Exception,e:
-                            print str(e)
                 else:
                     pass
             elif status.value == "Germline":

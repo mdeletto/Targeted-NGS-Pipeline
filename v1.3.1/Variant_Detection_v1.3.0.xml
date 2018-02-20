@@ -1,0 +1,116 @@
+<tool id="Variant_Detection_v1.3" name="Targeted Sequencing v1.3 - BETA">
+  <description>Detect and/or annotate variants from IonTorrent data</description>
+  <command interpreter="python">
+	Variant_Detection_v1.3.py --galaxy --galaxy_html_file $html_file --output_directory $html_file.files_path --ionreporter_version $version --regions $regions -c $base_output -t $url_or_local_bam.tumor_bam -n $url_or_local_bam.normal_bam -p $platform -s $status
+	#if $url_or_local_bam.url_or_local_select=="url"
+		--url
+	#end if
+	#if $url_or_local_ionreporter_somatic.url_or_local_ionreporter_somatic_select=="url"
+		--ionreporter_somatic_url_bool --ionreporter_somatic_analysis_name=$url_or_local_ionreporter_somatic.ionreporter_somatic_analysis_name --ionreporter_somatic_id=$url_or_local_ionreporter_somatic.ionreporter_somatic_id
+	#else
+		--ionreporter_somatic_vcf=$url_or_local_ionreporter_somatic.ionreporter_somatic_vcf --ionreporter_somatic_tsv=$url_or_local_ionreporter_somatic.ionreporter_somatic_tsv	
+	#end if
+	#if $url_or_local_ionreporter_germline.url_or_local_ionreporter_germline_select=="url"
+		--ionreporter_germline_url_bool --ionreporter_germline_analysis_name=$url_or_local_ionreporter_germline.ionreporter_germline_analysis_name --ionreporter_germline_id=$url_or_local_ionreporter_germline.ionreporter_germline_id
+	#else
+		--ionreporter_germline_vcf=$url_or_local_ionreporter_germline.ionreporter_germline_vcf	
+	#end if
+	#if $url_or_local_ionreporter_fusion.url_or_local_ionreporter_fusion_select=="url"
+		--ionreporter_fusion_url_bool --ionreporter_fusion_analysis_name=$url_or_local_ionreporter_fusion.ionreporter_fusion_analysis_name --ionreporter_fusion_id=$url_or_local_ionreporter_fusion.ionreporter_fusion_id
+	#else if $url_or_local_ionreporter_fusion.url_or_local_ionreporter_fusion_select=="local"
+		--ion_reporter_fusion_vcf=$url_or_local_ionreporter_fusion.ionreporter_fusion_vcf
+	#else
+
+	#end if
+</command>
+	
+
+<inputs>
+	<param name="regions" type="select" label="Target Regions for detection">
+		<option value="CCP">Comprehensive Cancer Panel (409 Gene)</option>
+		<option value="OCP" selected="true">Oncomine Cancer Panel</option>
+		<option value="BRCA">BRCA1/2 Custom Panel</option>
+		<option value="CHPv2">Cancer Hotspot Panel v2 (50 Gene)</option>
+	</param>
+	<param name="version" type="select" label="IonReporter version">
+		<option value="4.4" selected="true">4.4</option>
+		<option value="4.0">4.0</option>
+	</param>
+	<param name="status" type="select" label="Variant status to detect">
+		<option value="All">All(Germline, Somatic, and LOH)</option>
+		<option value="All-HC" selected="True">All(High-Confidence)</option>
+		<option value="Somatic">Somatic</option>
+		<option value="LOH">LOH(Loss of Heterozygosity)</option>
+		<option value="Somatic_LOH">Somatic and LOH</option>
+	</param>
+	<param name="platform" type="select" label="Platform sequencing was performed on">
+		<option value="PGM" selected="true">PGM</option>
+		<option value="Proton">Proton</option>
+	</param>
+	<param name="base_output" type="text" label="Base output name for files." help="If CoPath ID exists, it is suggested you use this for base output name."/>
+	<conditional name="url_or_local_bam">
+	<param name="url_or_local_select" type="select" label="Remote or Local BAM input" help="Please choose whether BAM input will be from TorrentSuite URL or a locally uploaded BAM">
+		<option value="url" selected="true">URL</option>
+		<option value="local">Local</option>
+	</param>
+	<when value="local">
+	<param name="tumor_bam" type="data" format="bam" label="Tumor bam"/>
+	<param name="normal_bam" type="data" format="bam" label="Normal bam" help="If no normal bam is selected, please import a Population Normal bam from the 'Data Libraries' option that is appropriate for your platform."/>
+	</when>
+	<when value="url">
+	<param name="tumor_bam" type="text" label="TorrentSuite URL for IonTorrent tumor BAM"/>
+	<param name="normal_bam" type="text" label="TorrentSuite URL for IonTorrent normal BAM"/>
+	</when>
+	</conditional>
+	<conditional name="url_or_local_ionreporter_somatic">
+	<param name="url_or_local_ionreporter_somatic_select" type="select" label="Remote or Local IonReporter SOMATIC analysis input" help="Please choose whether IonReporter SOMATIC analysis input will be remote or local.">
+		<option value="url" selected="true">URL</option>
+		<option value="local" >Local</option>
+	</param>
+	<when value="local">
+	<param name="ionreporter_somatic_vcf" type="data" format="vcf" label="SOMATIC VCF from IonReporter"/>
+	<param name="ionreporter_somatic_tsv" type="data" format="tabular" label="SOMATIC TSV from IonReporter."/>
+	</when>
+	<when value="url">
+	<param name="ionreporter_somatic_analysis_name" type="text" format="tabular" label="IonReporter SOMATIC Analysis Name"/>
+	<param name="ionreporter_somatic_id" type="text" format="tabular" label="IonReporter SOMATIC unique ID"/>
+	</when>
+	</conditional>
+	<conditional name="url_or_local_ionreporter_germline">
+	<param name="url_or_local_ionreporter_germline_select" type="select" label="Remote or Local IonReporter GERMLINE analysis input" help="Please choose whether IonReporter GERMLINE analysis input will be remote or local.">
+		<option value="url" selected="true">URL</option>
+		<option value="local">Local</option>
+	</param>
+	<when value="local">
+	<param name="ionreporter_germline_vcf" type="data" format="vcf" label="GERMLINE VCF from IonReporter"/>
+	</when>
+	<when value="url">
+	<param name="ionreporter_germline_analysis_name" type="text" format="tabular" label="IonReporter GERMLINE Analysis Name"/>
+	<param name="ionreporter_germline_id" type="text" format="tabular" label="IonReporter GERMLINE unique ID"/>
+	</when>
+	</conditional>
+	<conditional name="url_or_local_ionreporter_fusion">
+	<param name="url_or_local_ionreporter_fusion_select" type="select" label="FUSION SPECIFIC PARAMETER: Please choose whether Fusion input from IonReporter will be URL or locally uploaded VCF">
+		<option value="url">URL</option>
+		<option value="local">Local</option>
+		<option value="None" selected="True">None</option>
+	</param>
+	<when value="local">
+	<param name="ionreporter_fusion_vcf" type="data" format="vcf" label="Fusion VCF from IonReporter"/>
+	</when>
+	<when value="url">
+	<param name="ionreporter_fusion_analysis_name" type="text" format="tabular" label="IonReporter Fusion Analysis Name"/>
+	<param name="ionreporter_fusion_id" type="text" format="tabular" label="IonReporter Fusion unique ID"/>
+	</when>
+	</conditional>
+
+</inputs>
+  <outputs>
+    <data format="html" name="html_file" />
+  </outputs>
+
+<help>
+This tool is a wrapper script for variant annotation and detection using the IonTorrent data.  The tool can be run in two modes: (1) Variant Detection and Annotation or (2) Variant Annotation only.  The first mode required four files for input: tumor and normal BAMs, IonReporter vcf, and IonReporter tsv.  For annotation only mode, three files are submitted as input: varscan vcf, IonReporter vcf, and IonReporter tsv.  PLEASE NOTE: The IonReporter vcf contains formatting errors and must be corrected before running through this pipeline.
+</help>
+
+</tool>

@@ -2,7 +2,6 @@
 
 import os
 import re
-import sys
 import pprint
 import json
 import openpyxl
@@ -43,13 +42,13 @@ def main():
             self.pos = split_tsv_line[1]
             self.type = split_tsv_line[2]
             self.length = split_tsv_line[4]
-            self.iscn = split_tsv_line[12]
+            self.iscn = split_tsv_line[11]
             match = re.search("x(\d*)", self.iscn)
             self.ploidy = match.group(1)
             
-            self.confidence = split_tsv_line[13]
-            self.precision = split_tsv_line[14]
-            self.genes = split_tsv_line[21]
+            self.confidence = split_tsv_line[12]
+            self.precision = split_tsv_line[13]
+            self.genes = split_tsv_line[17]
     
     class CNV_VCF_Fields:
         def __init__(self, split_vcf_line, vcf_line):
@@ -395,64 +394,20 @@ def main():
                 return None
             else:
                 for colocated_variant in variant_entry['colocated_variants']:
-                    if not best_colocated_variant:
+                    if re.match("COSM", colocated_variant['id']):
                         best_colocated_variant = colocated_variant
                     else:
-                        # Replace any id with rs id if they are common snps
-                        if not re.match("rs", best_colocated_variant['id']) and re.match("rs", colocated_variant['id']):
-                            if 'minor_allele_freq' in colocated_variant.keys():
-                                if float(colocated_variant['minor_allele_freq']) > 0.001:
-                                    best_colocated_variant = colocated_variant
-                            if 'exac_maf' in colocated_variant.keys():
-                                if float(colocated_variant['exac_maf']) > 0.001:
-                                    best_colocated_variant = colocated_variant
-                            if 'gnomad_maf' in colocated_variant.keys():
-                                if float(colocated_variant['gnomad_maf']) > 0.001:
-                                    best_colocated_variant = colocated_variant
-                        # Replace rs IDs if there is a COSMIC ID and there is no minor allele freq
-                        elif re.match("COSM", colocated_variant['id'])  and re.match("rs", best_colocated_variant['id']):
-                            if 'minor_allele_freq' in best_colocated_variant.keys():
-                                #if not float(best_colocated_variant['minor_allele_freq']) > 0.001:
-                                pass
-                            elif 'exac_maf' in best_colocated_variant.keys():
-                                #if not float(best_colocated_variant['exac_maf']) > 0.001:
-                                pass
-                            elif 'gnomad_maf' in best_colocated_variant.keys():
-                                pass
-                            else:
-                                best_colocated_variant = colocated_variant
-                        # if we already have a COSMIC ID, just leave it
-                        elif re.match("COSM", colocated_variant['id']) and re.match("COSM", best_colocated_variant['id']):
+                        if not best_colocated_variant:
+                            best_colocated_variant = colocated_variant
+                        else:
                             pass
-                        # if we have an non-rsID as best variant, and this is a COSMIC variant, substitute if there is no MAF
-                        elif re.match("COSM", colocated_variant['id'])  and not re.match("rs", best_colocated_variant['id']):
-                            if 'minor_allele_freq' in best_colocated_variant.keys():
-                                pass
-                            elif 'exac_maf' in best_colocated_variant.keys():
-                                pass
-                            elif 'gnomad_maf' in best_colocated_variant.keys():
-                                pass
-                            else:
-                                best_colocated_variant = colocated_variant
-
-            return best_colocated_variant
+    
+                return best_colocated_variant
     
         def determine_best_transcript(variant_entry):
             
             best_transcript = {}
             
-            excluded_SO_terms = ['synonymous_variant',
-                     'start_retained_variant',
-                     'stop_retained_variant',
-                     'non_coding_transcript_exon_variant',
-                     'intron_variant',
-                     'downstream_gene_variant',
-                     'upstream_gene_variant',
-                     'UTR_variant',
-                     '3_prime_UTR_variant',
-                     '5_prime_UTR_variant',
-                     'NMD_transcript_variant',
-                     'null']    
             
             for consequence in variant_entry['transcript_consequences']:
                 
@@ -462,17 +417,7 @@ def main():
                             best_transcript = consequence
                         else:
                             if re.match("ENST", consequence['transcript_id']):
-                                if 'biotype' in consequence.keys():
-                                    if consequence['biotype'] == "protein_coding" and best_transcript['biotype'] != "protein_coding":
-                                        best_transcript = consequence
-                                    elif consequence['biotype'] == "protein_coding" and best_transcript['biotype'] == "protein_coding":
-                                        for consequence_term in consequence['consequence_terms']:
-                                            if consequence_term in excluded_SO_terms:
-                                                pass
-                                            else:
-                                                best_transcript = consequence
-                                    else:
-                                        pass
+                                best_transcript = consequence
                             else:
                                 pass
                 except KeyError:
@@ -1416,7 +1361,7 @@ def main():
             with open(cnv_tsv, "r") as f:
                 line_counter = 1
                 for line in f.readlines():
-                    if not re.match("#", line):
+                    if not line_counter == 1:
                         split_line = line.strip().split("\t")
                         if split_line[2] == "CNV":
                             line_obj = CNV_TSV_Fields(split_line)

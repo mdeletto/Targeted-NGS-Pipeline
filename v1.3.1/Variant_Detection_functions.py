@@ -84,7 +84,7 @@ def SnpSift_filter(vcf_in, SnpSift, BEDTOOLS_EXE, regex_filter, base_output, pro
 def VEP_command_unfiltered(VEP,REF_FASTA,base_output,program, vcf_in):
     print "Annotating file..."
     try:
-        vep_json_command = 'perl %s --quiet --cache --merged --offline --fasta %s -i %s --everything --check_alleles --cache_version 83 --json -o %s.%s.json -fork 16 --buffer_size 500 &> %s.vep.log' % (VEP,REF_FASTA,vcf_in,base_output,program,base_output)
+        vep_json_command = 'perl %s --quiet --cache --merged --offline --fasta %s -i %s --everything --check_alleles --cache_version 83 --json -o %s.%s.json -fork 16 &> %s.vep.log' % (VEP,REF_FASTA,vcf_in,base_output,program,base_output)
         vep_json_command_process = subprocess.Popen(vep_json_command.split(" "))
         output, err = vep_json_command_process.communicate()
         #subprocess.call('perl %s --quiet --cache --merged --offline --fasta %s -i %s --everything --check_alleles --cache_version 83 --json -o %s.%s.json -fork 16 &> %s.vep.log' % (VEP,REF_FASTA,vcf_in,base_output,program,base_output),shell=True)
@@ -158,7 +158,7 @@ def VEP_command_filtered(VEP,REF_FASTA,base_output,program,vcf_in):
             pp.pprint(dict(excluded_SO_terms_count))
 
         with open("%s.vep.log" % base_output,"w") as err:
-            vep_json_command = 'perl %s --quiet --cache --merged --offline --force_overwrite --fasta %s -i %s --everything --maf_exac --check_alleles --cache_version 83 --no_intergenic --minimal --allele_number --json --fork 16 --output_file STDOUT --buffer_size 500' % (VEP, REF_FASTA, vcf_in)
+            vep_json_command = 'perl %s --quiet --cache --merged --offline --force_overwrite --fasta %s -i %s --everything --maf_exac --check_alleles --cache_version 83 --no_intergenic --minimal --allele_number --json --fork 16 --output_file STDOUT' % (VEP, REF_FASTA, vcf_in)
 #             vep_json_command_process = subprocess.Popen(vep_json_command,
 #                                                         stdout=subprocess.PIPE,
 #                                                         stderr=err,
@@ -353,7 +353,7 @@ def IR_download_somatic_variant_zip(basename,variant_link,analysis_type):
 #         sys.exit(1)
 
     try:
-        proc = subprocess.Popen(["""curl -k -H "Content-Type:application/x-www-form-urlencoded" -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR_somatic.zip; \
+        proc = subprocess.Popen(["""curl -k -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR_somatic.zip; \
                                   unzip -q IR_somatic.zip; \
                                   rm -rf IR_somatic.zip; \
                                   unzip -q %s*.zip; \
@@ -371,7 +371,7 @@ def IR_download_somatic_variant_zip(basename,variant_link,analysis_type):
 
 def IR_download_fusion_zip(variant_link,basename):
     try:
-        proc = subprocess.Popen(["""curl -k -H "Content-Type:application/x-www-form-urlencoded" -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR_fusion.zip; \
+        proc = subprocess.Popen(["""curl -k -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR_fusion.zip; \
                                     unzip -q IR_fusion.zip; \
                                     rm -rf IR_fusion.zip; \
                                     unzip -q %s*.zip; \
@@ -390,12 +390,12 @@ def IR_download_germline_variant_zip(VCFLIB_DIR, basename, variant_link, analysi
     Because IR calls germline variants separately on each BAM and reports them as such, use VCFLIB to merge the VCFs together.
     """
     try:
-        subprocess.call("""curl -k -H "Content-Type:application/x-www-form-urlencoded" -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR_germline.zip; \
+        subprocess.call("""curl -k -H "Authorization:UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY" "%s" 2> /dev/null -o IR_germline.zip; \
                            unzip -q IR_germline.zip; \
                            rm -rf IR_germline.zip; \
                            unzip -q %s*.zip; \
-                           cp ./Variants/%s/%s*.vcf %s.ionreporter.%s_temp.sample.vcf; \
-                           cp ./Variants/%s/%s*.vcf %s.ionreporter.%s_temp.control.vcf; \
+                           cp ./Variants/%s/%s.vcf %s.ionreporter.%s_temp.sample.vcf; \
+                           cp ./Variants/%s/%s.vcf %s.ionreporter.%s_temp.control.vcf; \
                            rm -rf IR_germline.zip %s*.zip QC Variants Workflow_Settings VER*.log""" % (variant_link, basename, germline_sample_dict['sample'], germline_sample_dict['sample'], basename, analysis_type, germline_sample_dict['control'], germline_sample_dict['control'], basename, analysis_type, basename), shell=True)
 #         subprocess.call("unzip -qq IR.zip && unzip -qq %s.zip" % basename, shell=True)
 #         subprocess.call("cp ./Variants/%s/%s.vcf %s.ionreporter.%s_temp.sample.vcf" % (germline_sample_dict['sample'],germline_sample_dict['sample'],basename,analysis_type), shell=True)
@@ -439,7 +439,7 @@ def select_target_regions(regions):
         print "Selecting target regions..."
         if regions=="CCP":
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/CCP/CCPHSMV2_052013.bed"
-        elif regions=="OCP" or regions=="OCA" or regions=="OCPv2":
+        elif regions=="OCP" or regions=="OCA":
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/OCP/AmpliSeq_OCP/OCP.20150630.designed.bed"
         elif regions=="BRCA":
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/BRCA1-2/BRCA1_2.20131001.designed.bed"
@@ -449,10 +449,6 @@ def select_target_regions(regions):
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/TSC1-TSC2/TSC1_2.designed.bed"
         elif regions=="TFNA":
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/TFNA/Yale_Thyroid_DNA_WG_99191_167.1.20160607/WG_99191_167.1.20160607.TERTspike.designed.bed"
-        elif regions=="AMGEN":
-            REGIONS_FILE = "/home/michael/YNHH/Reference_Files/AMGEN/AMGEN_WG00244_DNA.20170216.designed.bed"
-        elif regions=="WhEx":
-            REGIONS_FILE = "/home/michael/YNHH/Reference_Files/AmpliSeqWhEx/AmpliSeqExome.20141113.designed.bed"
         else:
             REGIONS_FILE = "/home/michael/YNHH/Reference_Files/CCPHSMV2_052013.bed"
             print "WARNING: No bed file was selected.  Defaulting to using CCP regions to capture as much data as possible."
@@ -531,11 +527,9 @@ def muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_V1_PON,dbsnp_vcf
             print "RUNNING MUTECT2 IN TUMOR-ONLY MODE"
             #mutect2_command = "java -jar %s --analysis_type MuTect2 --reference_sequence %s -L %s --normal_panel %s --cosmic %s --dbsnp %s --input_file:tumor %s -o %s.mutect2.somatic.unfiltered.vcf --max_alt_allele_in_normal_fraction 0.1 -nct 8 --minPruning 10 --kmerSize 60" % (GATK_LATEST_EXE,REF_FASTA,REGIONS_FILE,MUTECT2_V1_PON,cosmic_vcf,dbsnp_vcf,tumor_bam,base_output)
             mutect2_command = "java -jar %s --analysis_type MuTect2 --reference_sequence %s -L %s --normal_panel %s --cosmic %s --dbsnp %s --input_file:tumor %s -o %s.mutect2.somatic.unfiltered.vcf -nct 8 --minPruning 10 --kmerSize 60" % (GATK_LATEST_EXE,REF_FASTA,REGIONS_FILE,MUTECT2_V1_PON,cosmic_vcf,dbsnp_vcf,tumor_bam,base_output)
-        elif MUTECT2_V1_PON is None:
-            mutect2_command = "java -jar %s --analysis_type MuTect2 --reference_sequence %s -L %s --cosmic %s --dbsnp %s --input_file:normal %s --input_file:tumor %s -o %s.mutect2.somatic.unfiltered.vcf --max_alt_allele_in_normal_fraction 0.1 -nct 8 --minPruning 10 --kmerSize 60" % (GATK_LATEST_EXE,REF_FASTA,REGIONS_FILE,cosmic_vcf,dbsnp_vcf,normal_bam,tumor_bam,base_output)
+
         else:
             mutect2_command = "java -jar %s --analysis_type MuTect2 --reference_sequence %s -L %s --normal_panel %s --cosmic %s --dbsnp %s --input_file:normal %s --input_file:tumor %s -o %s.mutect2.somatic.unfiltered.vcf --max_alt_allele_in_normal_fraction 0.1 -nct 8 --minPruning 10 --kmerSize 60" % (GATK_LATEST_EXE,REF_FASTA,REGIONS_FILE,MUTECT2_V1_PON,cosmic_vcf,dbsnp_vcf,normal_bam,tumor_bam,base_output)
-
 
         print "MUTECT2 SOMATIC CALLING COMMAND:", mutect2_command
         log = open('%s.mutect2.log' % base_output, 'w')
@@ -616,16 +610,14 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
     
     def check_if_tpl_spreadsheet_exists():
         """Checks if TPL spreadsheet is mounted and exists."""
-        if os.path.isfile("/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/TP Stats 2010-2017/2017 TP Stats.xlsx"):
-            return "/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/TP Stats 2010-2017/2017 TP Stats.xlsx"
+        if os.path.isfile("/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/2017 TP Stats.xlsx"):
+            return "/media/Tumor_Profiling_N_Drive/Tumor Profiling Lab/Tumor Profiling Documents/2017 TP Stats.xlsx"
         else:
             print "WARNING: Could not find the TP spreadsheet.  Attempting to troubleshoot the error..."
             if os.path.isdir("/media/Tumor_Profiling_N_Drive/"):
                 sys.exit("ERROR: N Drive is successfully mounted.  Where did the sheet go?  Re-check the filename")
             else:
                 sys.exit("ERROR: N Drive is not mounted.  Exiting...")
-            
-            return None
     
     
     def col2num(col):
@@ -895,27 +887,24 @@ def sample_attribute_autodetection(basename, pipeline_version, panel):
     panel = redefine_Downstream_panel_name(panel)
     # Check if TP stats spreadsheet exists
     spreadsheet_path = check_if_tpl_spreadsheet_exists()
-    
-    if spreadsheet_path:
-        # Load workbook
-        spreadsheet = load_workbook(spreadsheet_path, data_only=True)
-        # Get sheet names
-        sheet_names = spreadsheet.get_sheet_names()
-        # Remove sheet names that aren't named
-        for sheet_name in list(sheet_names):
-            if re.search("Sheet", sheet_name):
-                sheet_names.remove(sheet_name)
-        # Initialize defaultdict
-        sheet_entries = defaultdict(list)
-        # Pop sheet_names that are incompatible with pipeline
-        sheet_names.remove("TaqMan Cases")
-        sheet_names.remove("PD-L1 Cases")
-        
-        # Create a dict of entries from each sheet
-        print "Checking in the following sheet names for matching case IDs: " + ", ".join(sheet_names)
-        for sheet_name in sheet_names:
-            sheet_obj = spreadsheet.get_sheet_by_name(sheet_name)
-            append_entry_to_dict(sheet_obj, sheet_entries)
+    # Load workbook
+    spreadsheet = load_workbook(spreadsheet_path, data_only=True)
+    # Get sheet names
+    sheet_names = spreadsheet.get_sheet_names()
+    # Remove sheet names that aren't named
+    for sheet_name in list(sheet_names):
+        if re.search("Sheet", sheet_name):
+            sheet_names.remove(sheet_name)
+    # Initialize defaultdict
+    sheet_entries = defaultdict(list)
+    # Pop sheet_names that are incompatible with pipeline
+    sheet_names.remove("TaqMan Cases")
+    sheet_names.remove("PD-L1 Cases")
+    # Create a dict of entries from each sheet
+    print "Checking in the following sheet names for matching case IDs: " + ", ".join(sheet_names)
+    for sheet_name in sheet_names:
+        sheet_obj = spreadsheet.get_sheet_by_name(sheet_name)
+        append_entry_to_dict(sheet_obj, sheet_entries)
 
 
     # Search dict entries for ID that matches query ID
@@ -971,19 +960,3 @@ def extract_fusion_VCF_information(vcf):
                 fusion_dict['total_mapped_fusion_reads'] = total_mapped_fusion_reads
 
     return fusion_dict
-
-def run_pipeline_parser(base_output, PP_PARSER_EXE):
-    """Run pipeline-parser script to format raw pipeline files into spreadsheet."""
-    try:
-        subprocess.call("python %s -a --output-basename %s.unfiltered" % (PP_PARSER_EXE, base_output), shell=True)
-    except:
-        print "ERROR: pipeline-parser.py failed"
-
-
-def filter_variant_spreadsheet(base_output, FILTER_VARIANTS_EXE):
-    """Run filter_variants.py script to filter the final spreadsheet."""
-
-    if os.path.isfile("%s.unfiltered.xlsx" % base_output):
-        subprocess.call("python %s -i %s.unfiltered.xlsx -o %s.xlsx --minimum-vaf=0.05" % (FILTER_VARIANTS_EXE, base_output, base_output), shell=True)
-    else:
-        print "WARNING: Could not find unfiltered variant spreadsheet.  Not performing final filtering of variants"

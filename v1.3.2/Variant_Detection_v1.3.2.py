@@ -3,141 +3,151 @@
 import datetime
 import optparse
 import os
-import time
 import pysam
 import sys
 import subprocess
 import urllib
-from Variant_Detection_functions import *
-
-
-
-#-------------------------------------------------------------------------------------------
-#----------------------------Command line parser and arguments------------------------------
-#-------------------------------------------------------------------------------------------
-
-desc="""A pipeline for somatic, germline, and LOH variant detection and annotation for both IonTorrent and Illumina data."""
-vers="1.3.0"
-
-parser = optparse.OptionParser(description=desc,version=vers)
-
-# GENERAL OPTIONS    
-
-parser.add_option('--disable_filtering', help="""Enable consequential filtering for VCFs.  This does not apply to hard filters like read depth (these will be automatically applied to remove false positives).""", dest='filter_disabled', action='store_true',default=False)
-parser.add_option('-c', help="Base output name for files.  If a copath ID exists, please use this as the base output name.", dest='base_output', action='store')
-parser.add_option('--url', help="Flag for if BAM is coming from url", dest='url', action='store_true',default=False)
-parser.add_option('--regions', help="Regions to focus analysis on.  Must be in BED format", dest='regions', action='store')
-parser.add_option("-t", action="store", help="Input absolute path to tumor bam </path/to/sample.bam>",dest="tumor")
-parser.add_option("-n", action="store", help="Input absolute path to normal bam---NOTE: If no normal bam is selected, a population normal will be used.",dest="normal",default=None)
-parser.add_option("-p", action="store", help="Platform used for sequencing",dest="platform",default="IonTorrent") # option not currently supported
-
-# IONREPORTER OPTIONS
-
-group = optparse.OptionGroup(parser, "IonReporter inputs (for IonTorrent analyses)",
-                             "IonReporter-specific inputs for IonTorrent data only")
-group.add_option("--ionreporter_only", action="store_true", help="Only run IR analyses", dest="ionreporter_only", default=False)
-group.add_option('--ionreporter_skip_all', help="Skip all IR analyses", dest='ionreporter_skip_all', action='store_true',default=False)
-group.add_option("--ionreporter_version", action="store", help="Please indicate IR version number (ex. 4.0, 4.4)", dest="ionreporter_version", default=4.4)
-group.add_option('--ionreporter_somatic_url_bool', help="Flag for if VCF is coming from IonReporter url", dest='ionreporter_somatic_url_bool', action='store_true',default=False)
-group.add_option('--ionreporter_somatic_analysis_name', help="Analysis name within IonReporter", dest='ionreporter_somatic_analysis_name', action='store')
-group.add_option('--ionreporter_somatic_id', help="Analysis ID within IonReporter", dest='ionreporter_somatic_id', action='store')#,default=opts.base_output)
-group.add_option("--ionreporter_somatic_vcf", action="store", help="Input absolute path to IonReporter VCF </path/to/ionreporter.vcf>",dest="ionreporter_somatic_vcf")
-group.add_option("--ionreporter_somatic_tsv", action="store", help="Input absolute path to IonReporter TSV </path/to/ionreporter.tsv>",dest="ionreporter_somatic_tsv")
-group.add_option('--ionreporter_fusion_url_bool', help="Flag for if FUSION VCF is coming from IonReporter url", dest='ionreporter_fusion_url_bool', action='store_true',default=False)
-group.add_option('--ionreporter_fusion_analysis_name', help="Fusion analysis name within IonReporter", dest='ionreporter_fusion_analysis_name', action='store')
-group.add_option('--ionreporter_fusion_id', help="Fusion analysis ID within IonReporter", dest='ionreporter_fusion_id', action='store')#,default=opts.base_output)
-group.add_option('--ionreporter_fusion_vcf', help="Fusion VCF within IonReporter", dest='ionreporter_fusion_vcf', action='store')
-group.add_option('--ionreporter_germline_url_bool', help="Flag for if VCF is coming from IonReporter url", dest='ionreporter_germline_url_bool', action='store_true',default=False)
-group.add_option('--ionreporter_germline_analysis_name', help="Analysis name within IonReporter", dest='ionreporter_germline_analysis_name', action='store')
-group.add_option('--ionreporter_germline_id', help="Analysis ID within IonReporter", dest='ionreporter_germline_id', action='store')#,default=opts.base_output)
-group.add_option("--ionreporter_germline_vcf", action="store", help="Input absolute path to IonReporter VCF </path/to/ionreporter.vcf>",dest="ionreporter_germline_vcf")
-parser.add_option_group(group)
-
-# MISC OPTIONS
-
-group = optparse.OptionGroup(parser, "Miscellaneous options",
-                             "Tells the pipeline how to handle other options, to allow the user finer control over output.")
-group.add_option("--do-not-separate-loh", action="store_true", help="Boolean FLAG to keep GERMLINE AND LOH calls in the same VCF rather than splitting them", dest="do_not_separate_LOH", default=False)
-parser.add_option_group(group)
-
-# GALAXY OPTIONS
-# Allows for the tool to be plugged into a galaxy environment (best used for testing purposes and manual analyses)
-
-group = optparse.OptionGroup(parser, "Galaxy options",
-                    "ONLY TO BE USED IN A GALAXY ENVIRONMENT")
-group.add_option("--galaxy", action="store_true", help="Apply galaxy-specific commands if this flag is supplied",dest="galaxy_flag",default=False)
-group.add_option("--galaxy_html_file", action="store", help="Path to galaxy output file---to be used only in Galaxy environment",dest="galaxy_html_file")
-group.add_option("--output_directory", action="store", help="Path to output directory",dest="output_directory")
-parser.add_option_group(group)
-
-
-# LEGACY OPTIONS (UNSUPPORTED)
-# Variables for VarScan variant calling.  These are disabled anyway, so there will be no effect.
-
-group = optparse.OptionGroup(parser, "LEGACY OPTIONS",
-                    "Old VarScan variant calling options.  These are disabled anyway...")
-group.add_option('-s', help='Check for classes of variants in variant detection mode <All,All-HC,Somatic,Germline,LOH,Somatic_LOH>', dest='status', action='store',default='Somatic_LOH')
-parser.add_option_group(group)
-
-(opts, args) = parser.parse_args()
-
-#-------------------------------------------------------------------------------------------
-#------------------------PATHS TO PROGRAMS/FILES USED BY PIPELINE---------------------------
-#-------------------------------------------------------------------------------------------
-global VCFLIB_DIR, IR_API_KEY
-
-# EXECUTABLES
-
-SAMTOOLS_EXE = "/home/michael/bin/samtools-1.1/samtools"
-BEDTOOLS_EXE = "/home/michael/bin/bedtools2/bin/bedtools"
-VARSCAN_EXE = "/home/michael/bin/VarScan/VarScan.v2.3.9.jar"
-SNPSIFT_EXE = "/home/michael/bin/snpEff-4.3i/SnpSift.jar"
-VEP_EXE = "/home/michael/bin/ensembl-tools-release-83/scripts/variant_effect_predictor/variant_effect_predictor.pl"
-VEP_FILTER_EXE = "/home/michael/bin/ensembl-tools-release-83/scripts/variant_effect_predictor/filter_vep.pl"
-EDDY_EXE = "/home/michael/bin/eddy.jar"
-BAM_READCOUNT_EXE = "/home/michael/bin/bam-readcount/bin/bin/bam-readcount"
-VCFLIB_DIR = "/home/michael/bin/vcflib/bin"
-MUTECT_EXE = "/home/michael/bin/mutect/muTect-1.1.7.jar"
-GATK_EXE = "/home/michael/bin/GATK/GenomeAnalysisTK.jar"
-GATK_LATEST_EXE = "/home/michael/bin/GATK-3.6/GenomeAnalysisTK.jar"
-STRELKA_EXE = '/home/michael/bin/strelka/bin/configureStrelkaWorkflow.pl'
-
-# CUSTOM EXECUTABLE
-
-PP_PARSER_EXE = '/home/michael/YNHH/Code/Github-mdeletto/Targeted-NGS-Pipeline/v%s/pipeline-parser.py' % vers
-FILTER_VARIANTS_EXE = '/home/michael/YNHH/Code/Github-mdeletto/Targeted-NGS-Pipeline/v%s/filter_variants.py' % vers
-
-# REFERENCE FILES
-
-VEP_REF_FASTA = "/home/michael/YNHH/Reference_Files/FASTA/hg19.VEP.fasta"
-REFERENCE_FASTA = "/home/michael/YNHH/Reference_Files/FASTA/hg19.fasta"
-REF_FASTA = REFERENCE_FASTA
-dbsnp_vcf = '/home/michael/YNHH/Reference_Files/Common/Common/dbsnp-common.v142.ucsc.vcf'
-cosmic_vcf = '/home/michael/YNHH/Reference_Files/Common/Common/COSMIC.v74.hg19.ucsc.sorted.vcf'
-STRELKA_CONFIG_TARGETED = '/home/michael/bin/strelka/etc/strelka_config.iontorrent.targeted.ini'
-STRELKA_CONFIG = STRELKA_CONFIG_TARGETED
-MUTECT_V1_PON = "/home/michael/Development/MuTect/OCP.mutect.PON.vcf"
-MUTECT2_PON_OCP = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/OCP/OCP.mutect2.PON.vcf"
-MUTECT2_PON_CCP = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/CCP/CCP.mutect2.PON.vcf"
-MUTECT2_PON_TFNA = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/TFNA/PopulationNormal_TFNA_v1.vcf"
-MUTECT2_PON_HSM = "/home/michael/YNHH/Reference_Files/Population_Normal/HSM/v1/VCFs/PopulationNormal_HSM_v1.vcf"
-MUTECT2_PON_AMGEN = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/AMGEN/PopulationNormal_AMGEN_v1.vcf"
-
-
-# POPULATION NORMALS
-
-POPULATION_NORMAL_BAM_OCP = '/home/michael/YNHH/Reference_Files/Population_Normal/PopulationNormal_OCP_v2.bam'
-POPULATION_NORMAL_BAM_TFNA = '/home/michael/YNHH/Reference_Files/Population_Normal/TFNA/PopulationNormal_TFNA_v1.bam'
-POPULATION_NORMAL_BAM_HSM = '/home/michael/YNHH/Reference_Files/Population_Normal/PopulationNormal_HSM_v1.bam'
-POPULATION_NORMAL_BAM_AMGEN = '/home/michael/YNHH/Reference_Files/Population_Normal/AMGEN/v1/PopulationNormal_AMGEN_v1.bam'
-POPULATION_NORMAL_BAM_CCP = '/home/michael/YNHH/Reference_Files/Population_Normal/Population_Normal_PGM_v2.CCP.bam'
-
-# OTHER GLOBAL VARIABLES
-
-IR_API_KEY = "UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY"
+import MySQLdb
+from Variant_Detection_functions import *    
 
 def main():
-    header = "---STARTING TPL Targeted NGS Pipeline v1.3---"
+    
+    global opts
+    global vers
+    
+    #-------------------------------------------------------------------------------------------
+    #----------------------------Command line parser and arguments------------------------------
+    #-------------------------------------------------------------------------------------------
+    
+    desc="""A pipeline for somatic, germline, and LOH variant detection and annotation for both IonTorrent and Illumina data."""
+    vers="1.3.2"
+    
+    parser = optparse.OptionParser(description=desc,version=vers)
+    
+    # GENERAL OPTIONS    
+    
+    parser.add_option('--disable_filtering', help="""Enable consequential filtering for VCFs.  This does not apply to hard filters like read depth (these will be automatically applied to remove false positives).""", dest='filter_disabled', action='store_true',default=False)
+    parser.add_option('-c', help="Base output name for files.  If a copath ID exists, please use this as the base output name.", dest='base_output', action='store')
+    parser.add_option('--url', help="Flag for if BAM is coming from url", dest='url', action='store_true',default=False)
+    parser.add_option('--regions', help="Regions to focus analysis on.  Must be in BED format", dest='regions', action='store')
+    parser.add_option("-t", action="store", help="Input absolute path to tumor bam </path/to/sample.bam>",dest="tumor")
+    parser.add_option("-n", action="store", help="Input absolute path to normal bam---NOTE: If no normal bam is selected, a population normal will be used.",dest="normal",default=None)
+    parser.add_option("-p", action="store", help="Platform used for sequencing",dest="platform",default="IonTorrent") # option not currently supported
+    
+    # IONREPORTER OPTIONS
+    
+    group = optparse.OptionGroup(parser, "IonReporter inputs (for IonTorrent analyses)",
+                                 "IonReporter-specific inputs for IonTorrent data only")
+    group.add_option("--ionreporter_only", action="store_true", help="Only run IR analyses", dest="ionreporter_only", default=False)
+    group.add_option('--ionreporter_skip_all', help="Skip all IR analyses", dest='ionreporter_skip_all', action='store_true',default=False)
+    group.add_option("--ionreporter_version", action="store", help="Please indicate IR version number (ex. 4.0, 4.4)", dest="ionreporter_version", default=4.4)
+    group.add_option('--ionreporter_somatic_url_bool', help="Flag for if VCF is coming from IonReporter url", dest='ionreporter_somatic_url_bool', action='store_true',default=False)
+    group.add_option('--ionreporter_somatic_analysis_name', help="Analysis name within IonReporter", dest='ionreporter_somatic_analysis_name', action='store')
+    group.add_option('--ionreporter_somatic_id', help="Analysis ID within IonReporter", dest='ionreporter_somatic_id', action='store')#,default=opts.base_output)
+    group.add_option("--ionreporter_somatic_vcf", action="store", help="Input absolute path to IonReporter VCF </path/to/ionreporter.vcf>",dest="ionreporter_somatic_vcf")
+    group.add_option("--ionreporter_somatic_tsv", action="store", help="Input absolute path to IonReporter TSV </path/to/ionreporter.tsv>",dest="ionreporter_somatic_tsv")
+    group.add_option('--ionreporter_fusion_url_bool', help="Flag for if FUSION VCF is coming from IonReporter url", dest='ionreporter_fusion_url_bool', action='store_true',default=False)
+    group.add_option('--ionreporter_fusion_analysis_name', help="Fusion analysis name within IonReporter", dest='ionreporter_fusion_analysis_name', action='store')
+    group.add_option('--ionreporter_fusion_id', help="Fusion analysis ID within IonReporter", dest='ionreporter_fusion_id', action='store')#,default=opts.base_output)
+    group.add_option('--ionreporter_fusion_vcf', help="Fusion VCF within IonReporter", dest='ionreporter_fusion_vcf', action='store')
+    group.add_option('--ionreporter_germline_url_bool', help="Flag for if VCF is coming from IonReporter url", dest='ionreporter_germline_url_bool', action='store_true',default=False)
+    group.add_option('--ionreporter_germline_analysis_name', help="Analysis name within IonReporter", dest='ionreporter_germline_analysis_name', action='store')
+    group.add_option('--ionreporter_germline_id', help="Analysis ID within IonReporter", dest='ionreporter_germline_id', action='store')#,default=opts.base_output)
+    group.add_option("--ionreporter_germline_vcf", action="store", help="Input absolute path to IonReporter VCF </path/to/ionreporter.vcf>",dest="ionreporter_germline_vcf")
+    parser.add_option_group(group)
+    
+    # MISC OPTIONS
+    
+    group = optparse.OptionGroup(parser, "Miscellaneous options",
+                                 "Tells the pipeline how to handle other options, to allow the user finer control over output.")
+    group.add_option("--do-not-separate-loh", action="store_true", help="Boolean FLAG to keep GERMLINE AND LOH calls in the same VCF rather than splitting them", dest="do_not_separate_LOH", default=False)
+    parser.add_option_group(group)
+    
+    # GALAXY OPTIONS
+    # Allows for the tool to be plugged into a galaxy environment (best used for testing purposes and manual analyses)
+    
+    group = optparse.OptionGroup(parser, "Galaxy options",
+                        "ONLY TO BE USED IN A GALAXY ENVIRONMENT")
+    group.add_option("--galaxy", action="store_true", help="Apply galaxy-specific commands if this flag is supplied",dest="galaxy_flag",default=False)
+    group.add_option("--galaxy_html_file", action="store", help="Path to galaxy output file---to be used only in Galaxy environment",dest="galaxy_html_file")
+    group.add_option("--output_directory", action="store", help="Path to output directory",dest="output_directory")
+    parser.add_option_group(group)
+    
+    
+    # LEGACY OPTIONS (UNSUPPORTED)
+    # Variables for VarScan variant calling.  These are disabled anyway, so there will be no effect.
+    
+    group = optparse.OptionGroup(parser, "LEGACY OPTIONS",
+                        "Old VarScan variant calling options.  These are disabled anyway...")
+    group.add_option('-s', help='Check for classes of variants in variant detection mode <All,All-HC,Somatic,Germline,LOH,Somatic_LOH>', dest='status', action='store',default='Somatic_LOH')
+    parser.add_option_group(group)
+    
+    (opts, args) = parser.parse_args()
+    
+    #-------------------------------------------------------------------------------------------
+    #------------------------PATHS TO PROGRAMS/FILES USED BY PIPELINE---------------------------
+    #-------------------------------------------------------------------------------------------
+    global VCFLIB_DIR, IR_API_KEY
+    
+    # EXECUTABLES
+    
+    SAMTOOLS_EXE = "/home/michael/bin/samtools-1.1/samtools"
+    BEDTOOLS_EXE = "/home/michael/bin/bedtools2/bin/bedtools"
+    VARSCAN_EXE = "/home/michael/bin/VarScan/VarScan.v2.3.9.jar"
+    SNPSIFT_EXE = "/home/michael/bin/snpEff-4.3i/SnpSift.jar"
+    VEP_EXE = "/home/michael/bin/ensembl-tools-release-83/scripts/variant_effect_predictor/variant_effect_predictor.pl"
+    VEP_FILTER_EXE = "/home/michael/bin/ensembl-tools-release-83/scripts/variant_effect_predictor/filter_vep.pl"
+    EDDY_EXE = "/home/michael/bin/eddy.jar"
+    BAM_READCOUNT_EXE = "/home/michael/bin/bam-readcount/bin/bin/bam-readcount"
+    VCFLIB_DIR = "/home/michael/bin/vcflib/bin"
+    MUTECT_EXE = "/home/michael/bin/mutect/muTect-1.1.7.jar"
+    GATK_EXE = "/home/michael/bin/GATK/GenomeAnalysisTK.jar"
+    GATK_LATEST_EXE = "/home/michael/bin/GATK-3.6/GenomeAnalysisTK.jar"
+    STRELKA_EXE = '/home/michael/bin/strelka/bin/configureStrelkaWorkflow.pl'
+    RSCRIPT_EXE = '/usr/bin/Rscript'
+    
+    # CUSTOM EXECUTABLE
+    
+    CNV_PLOT_EXE = '/home/michael/YNHH/Code/Bioinformatics/R/CNV_plot_ionreporter.v2.R'
+    PP_PARSER_EXE = '/home/michael/YNHH/Code/Github-mdeletto/Targeted-NGS-Pipeline/v%s/pipeline-parser.py' % vers
+    FILTER_VARIANTS_EXE = '/home/michael/YNHH/Code/Github-mdeletto/Targeted-NGS-Pipeline/v%s/filter_variants.py' % vers
+    
+    # REFERENCE FILES
+    
+    VEP_REF_FASTA = "/home/michael/YNHH/Reference_Files/FASTA/hg19.VEP.fasta"
+    REFERENCE_FASTA = "/home/michael/YNHH/Reference_Files/FASTA/hg19.fasta"
+    REF_FASTA = REFERENCE_FASTA
+    dbsnp_vcf = '/home/michael/YNHH/Reference_Files/Common/Common/dbsnp-common.v142.ucsc.vcf'
+    cosmic_vcf = '/home/michael/YNHH/Reference_Files/Common/Common/COSMIC.v74.hg19.ucsc.sorted.vcf'
+    STRELKA_CONFIG_TARGETED = '/home/michael/bin/strelka/etc/strelka_config.iontorrent.targeted.ini'
+    STRELKA_CONFIG = STRELKA_CONFIG_TARGETED
+    
+    # VEP PLUGIN FILES
+    
+    DBNSFP = "/home/michael/YNHH/Reference_Files/dbNSFP/dbNSFP.gz"
+    
+    # MUTECT PONs
+    
+    MUTECT_V1_PON = "/home/michael/Development/MuTect/OCP.mutect.PON.vcf"
+    MUTECT2_PON_OCP = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/OCP/OCP.mutect2.PON.vcf"
+    MUTECT2_PON_CCP = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/CCP/CCP.mutect2.PON.vcf"
+    MUTECT2_PON_TFNA = "/home/michael/YNHH/Reference_Files/tool-reference-files/MuTect2/PON/TFNA/PopulationNormal_TFNA_v1.vcf"
+    MUTECT2_PON_HSM = "/home/michael/YNHH/Reference_Files/Population_Normal/HSM/v1/VCFs/PopulationNormal_HSM_v1.vcf"
+    
+    # POPULATION NORMALS
+    
+    POPULATION_NORMAL_BAM_OCP = '/home/michael/YNHH/Reference_Files/Population_Normal/PopulationNormal_OCP_v2.bam'
+    POPULATION_NORMAL_BAM_TFNA = '/home/michael/YNHH/Reference_Files/Population_Normal/TFNA/PopulationNormal_TFNA_v1.bam'
+    POPULATION_NORMAL_BAM_HSM = '/home/michael/YNHH/Reference_Files/Population_Normal/PopulationNormal_HSM_v1.bam'
+    POPULATION_NORMAL_BAM_AMGEN = '/home/michael/YNHH/Reference_Files/Population_Normal/AMGEN/v1/PopulationNormal_AMGEN_v1.bam'
+    POPULATION_NORMAL_BAM_CCP = '/home/michael/YNHH/Reference_Files/Population_Normal/Population_Normal_PGM_v2.CCP.bam'
+    
+    # OTHER GLOBAL VARIABLES
+    
+    IR_API_KEY = "UmxyUXNPR3M1Q2RsbS9NYjBHQjBIaUxFTFA5RkJhRHBaMmlSSXZJTjBmUnNmQ0t1NkhOSUlrMStiNHFIQm16UjNKN2NYMzNOT2czcytqc2RveEhqK3BBSHhZNEhpNmRDVmtQaGRUZ1Z5ZXVXazJMTllQemIvV3A5c2NHOTNxRmY"
+
+    
+    header = "---STARTING TPL Targeted NGS Pipeline v%s---" % vers
     print "-" * len(header)
     print header
     print "-" * len(header)    
@@ -186,7 +196,7 @@ def main():
                     opts.normal = POPULATION_NORMAL_BAM_TFNA
                 elif opts.regions == "AMGEN":
                     opts.normal = POPULATION_NORMAL_BAM_AMGEN
-                elif opts.regions == "OCP" or opts.regions == "OCA" or opts.regions == "OCPv2":
+                elif opts.regions == "OCP" or opts.regions == "OCA":
                     opts.normal = POPULATION_NORMAL_BAM_OCP
                 elif opts.regions == "HSM" or opts.regions == "CHPv2":
                     opts.normal = POPULATION_NORMAL_BAM_HSM
@@ -195,10 +205,14 @@ def main():
     
     # Create index for BAMs
     pysam.index(opts.tumor) # create index for tumor
-    if not re.search("Population", opts.normal, re.IGNORECASE):
-        pysam.index(opts.normal) # create index for normal
+    pysam.index(opts.normal) # create index for normal
     
-    # Create normal-tumor mpileup (RETIRED WITH VARSCAN in v1.3)
+    # Perform QC module
+    
+    QC = QC_module()
+    QC.execute_FASTQC(opts)
+    
+    # Create normal-tumor mpileup (RETIRED WITH VARSCAN in v1.3.0)
     #samtools_mpileup(SAMTOOLS_EXE,opts.tumor,opts.normal,opts.base_output,REFERENCE_FASTA,REGIONS_FILE)
     
     #---COMMAND LINE CHECK FOR REMOTE IF VCF INPUT---#
@@ -231,6 +245,7 @@ def main():
             try:
                 # Determine download link
                 variant_link = IR_locate_variant_zip(url_encoded_ionreporter_somatic_analysis_name, opts.ionreporter_somatic_id)
+                remote_dir_base_path = "/".join(variant_link.split("/")[:-1])
                 # Download analysis and process files
                 ionreporter_somatic_vcf_and_tsv = IR_download_somatic_variant_zip(opts.base_output, variant_link, "somatic")
                 ionreporter_somatic_unfiltered_vcf, ionreporter_somatic_tsv = (i for i in ionreporter_somatic_vcf_and_tsv)
@@ -246,7 +261,6 @@ def main():
                 sys.exit(1)
         else:
             pass
-    
     
         if opts.ionreporter_fusion_url_bool == True:
             print "Remote download of FUSION VCF from IonReporter initiated.  Please hold..."
@@ -282,7 +296,7 @@ def main():
             else:
                 print "Fusion VCF local input"
                 rename_fusion_vcf(opts.ionreporter_fusion_vcf,opts.base_output) # Rename fusions.vcf file as (basename).ionreporter.fusions.vcf
-    
+
         # Check for ionreporter.fusions.vcf
         
         ###  PROCESS FUSIONS VCF AND EXTRACT INFO ###
@@ -297,12 +311,14 @@ def main():
                     for k in fusion_dict['gene_expression_read_counts'].keys():
                         gene_expression_out.write("%s\t%s" % (k, str(fusion_dict['gene_expression_read_counts'][k])) + "\n")
     
+    
         #---SELECT IONREPORTER VCF AND APPLY IR VERSION FIX IF NECESSARY---#
         
         ionreporter_somatic_unfiltered_vcf = opts.ionreporter_somatic_vcf
         ionreporter_somatic_unfiltered_vcf = IR4_4_VCF_fix(ionreporter_somatic_unfiltered_vcf,opts.base_output)
         # Remove the tmp IR somatic VCF
         subprocess.call("rm %s" % opts.ionreporter_somatic_vcf, shell=True)
+    
 
     
     #-------------------------------------------------------------------------------------------
@@ -335,7 +351,7 @@ def main():
         elif opts.regions == "AMGEN":
             MUTECT2_PON = MUTECT2_PON_AMGEN
             mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
-        elif opts.regions in ["OCP","OCA","OCPv2"]:
+        elif opts.regions in ["OCP","OCA"]:
             MUTECT2_PON = MUTECT2_PON_OCP
             mutect2_unfiltered_vcf = muTect2_caller_command(GATK_LATEST_EXE,REGIONS_FILE,MUTECT2_PON,dbsnp_vcf,cosmic_vcf,REFERENCE_FASTA,opts.normal,opts.tumor,opts.base_output)
         elif opts.regions in ["HSM", "CHPv2"]:
@@ -377,6 +393,8 @@ def main():
 #                                         gatk_vcf]
 #                                        )
 
+
+
     #-------------------------------------------------------------------------------------------
     #----------------------VARIANT (VCF) FILTERING AND ANNOTATION-------------------------------
     #-------------------------------------------------------------------------------------------
@@ -417,8 +435,9 @@ def main():
         elif description == "strelka.somatic.unfiltered":
             strelka_unfiltered_vcf = multibreak_vcf(VCFLIB_DIR, strelka_unfiltered_vcf, opts.base_output, description)
             
-
+    
     ### PERFORM HARD-FILTERING AND VEP ANNOTATION
+    print """#--------------------VARIANT FILTERING AND ANNOTATION--------------------#"""
     program_filter_vcf_list = []
     if opts.ionreporter_skip_all is False:
         program_filter_vcf_list = [
@@ -430,6 +449,7 @@ def main():
                                     """(HRUN[*] <= 6)
                                     & (DP[*] >= 20)
                                     & (AO[*] >= 2)
+                                    & (GEN[1].DP[*] >= 5)
                                     & !(ALT='<CNV>')""", 
                                     ionreporter_somatic_unfiltered_vcf],
     
@@ -441,41 +461,27 @@ def main():
                                     ]
     
     if opts.ionreporter_only is False:
+        
+        program_filter_vcf_list = program_filter_vcf_list + [                                        
+                                                             ["strelka.somatic",
+                                                             """(GEN[0].DP[*] >= 5)
+                                                                 & (GEN[1].DP[*] >= 20)
+                                                                 & (SGT !~ 'ref->ref')""",
+                                                             strelka_unfiltered_vcf]
+                                                             ]
+        
         if re.search("Population", opts.normal, re.IGNORECASE):
             program_filter_vcf_list = program_filter_vcf_list + [
                                        # first index = output basename suffix
                                        # second index = SnpSift filter expression
                                        # third index = vcf input
-    
-        #                                 ["varscan",  
-        #                                  """
-        #                                     ((SS ='1') | (SS = '2') | (SS= '3') )  
-        #                                      & ( (GEN[0].DP[*] >= 5) & (GEN[1].DP[*] >= 20))""",
-        #                                      #& !(exists INDEL)""", # filter out INDELs
-        #                                  varscan_vcf],
-        #                                    
-    
-                               
-        #                                 ["mutect.somatic",
-        #                                  """(GEN[1].FA <= 0.05) 
-        #                                      & (GEN[0].FA >= 0.05) 
-        #                                      & (GEN[1].DP >= 5) 
-        #                                      & (GEN[0].DP >= 20)""",
-        #                                      #& (FILTER = 'PASS')""",
-        #                                  mutect_vcf],
                                        
                                         ["mutect2.somatic",
                                          """((GEN[0].AF >= 0.05) 
                                              & (GEN[0].AD[1] >= 2))
                                              & ( (VARTYPE !~ 'DEL') & (VARTYPE !~ 'INS') ) 
                                              | (FILTER = 'PASS')""",
-                                        mutect2_unfiltered_vcf],
-         
-                                        ["strelka.somatic",
-                                         """(GEN[0].DP[*] >= 5)
-                                             & (GEN[1].DP[*] >= 20)
-                                             & (SGT !~ 'ref->ref')""",
-                                         strelka_unfiltered_vcf]
+                                        mutect2_unfiltered_vcf]
                                        
                                        ]
         else:
@@ -483,24 +489,7 @@ def main():
                                            # first index = output basename suffix
                                            # second index = SnpSift filter expression
                                            # third index = vcf input
-        
-            #                                 ["varscan",  
-            #                                  """
-            #                                     ((SS ='1') | (SS = '2') | (SS= '3') )  
-            #                                      & ( (GEN[0].DP[*] >= 5) & (GEN[1].DP[*] >= 20))""",
-            #                                      #& !(exists INDEL)""", # filter out INDELs
-            #                                  varscan_vcf],
-            #                                    
-        
-                                   
-            #                                 ["mutect.somatic",
-            #                                  """(GEN[1].FA <= 0.05) 
-            #                                      & (GEN[0].FA >= 0.05) 
-            #                                      & (GEN[1].DP >= 5) 
-            #                                      & (GEN[0].DP >= 20)""",
-            #                                      #& (FILTER = 'PASS')""",
-            #                                  mutect_vcf],
-                                           
+
                                             ["mutect2.somatic",
                                              """((GEN[1].AF <= 0.05) 
                                                  & (GEN[0].AF >= 0.05) 
@@ -508,13 +497,7 @@ def main():
                                                  & (GEN[0].AD[1] >= 2)
                                                  & ( (VARTYPE !~ 'DEL') & (VARTYPE !~ 'INS') ) )
                                                  | (FILTER = 'PASS')""",
-                                            mutect2_unfiltered_vcf],
-             
-                                            ["strelka.somatic",
-                                             """(GEN[0].DP[*] >= 5)
-                                                 & (GEN[1].DP[*] >= 20)
-                                                 & (SGT !~ 'ref->ref')""",
-                                             strelka_unfiltered_vcf]
+                                            mutect2_unfiltered_vcf]
                                            
                                            ]
 
@@ -526,7 +509,7 @@ def main():
                                             & (AO[*] >= 2) 
                                             & (GEN[0] != '.')
                                              & ((GEN[1].DP[*] >= 5) | (GEN[1] = '.')) 
-                                             & ( ((GEN[0].AF[*] >= 0.65) & (GEN[1].AF[*] <= 0.65)) | (isHom(GEN[0]) & isHet(GEN[1])) )
+                                             & ((GEN[0].AF[*] >= 0.65) & (GEN[1].AF[*] <= 0.65))
                                              & !(ALT='<CNV>')""", 
                                          ionreporter_germline_unfiltered_vcf]
                                        )
@@ -561,7 +544,7 @@ def main():
                 pass
             else:
                 # Apply filters via SnpSift
-                filtered_vcf = SnpSift_filter(vcf,SNPSIFT_EXE,BEDTOOLS_EXE, filter, opts.base_output, program, opts.do_not_separate_LOH)
+                filtered_vcf = SnpSift_filter(vcf, SNPSIFT_EXE, BEDTOOLS_EXE, filter, opts.base_output, program, opts.do_not_separate_LOH)
                 
                 # ionreporter.cnv.vcf needs to be handled via unfiltered method or will cause memory issues
                 if program == "ionreporter.cnv":  
@@ -572,13 +555,21 @@ def main():
                         print "WARNING: Running consequential filters.  Only nonsynonymous coding variants will be reported!"  
                         VEP_command_filtered(VEP_EXE,VEP_REF_FASTA,opts.base_output,program, filtered_vcf)
                     else:
-                        VEP_command_unfiltered(VEP_EXE,VEP_REF_FASTA,opts.base_output,program, filtered_vcf)
+                        VEP_command_unfiltered(VEP_EXE, VEP_REF_FASTA, opts.base_output, program, filtered_vcf)
+
+    #-------------------------------------------------------------------------------------------
+    #--------------------------------CNV PLOTTING-----------------------------------------------
+    #-------------------------------------------------------------------------------------------
+    
+    
+    CNVs = IR_CNV_module(remote_dir_base_path)
+    CNVs.execute_CNV_module(REGIONS_FILE, RSCRIPT_EXE, CNV_PLOT_EXE, SNPSIFT_EXE, opts, "%s.ionreporter.cnv.vcf" % opts.base_output)
 
 
     #-------------------------------------------------------------------------------------------
     #---------------------------------FINAL POST-PROCESSING-------------------------------------
     #-------------------------------------------------------------------------------------------
-    
+
     extra_file_cleanup()
 
     run_pipeline_parser(opts.base_output, PP_PARSER_EXE)
@@ -590,6 +581,13 @@ def main():
     time.sleep(10)
     
     move_files_to_new_subdirectory(opts.tumor, opts.normal, opts.base_output, opts.galaxy_flag)
+
+    try:
+        print "RUNNING pipeline-parser.py"
+        subprocess.call("python2.7 %s -a --output-basename %s.unfiltered" % (PP_PARSER, opts.base_output), shell=True)
+    except:
+        print "ERROR: pipeline-parser.py failed"
+    
     
     if opts.galaxy_flag is True:
         Galaxy_special_function(opts.base_output, opts.output_directory)
